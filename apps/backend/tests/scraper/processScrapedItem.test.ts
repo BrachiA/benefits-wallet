@@ -257,6 +257,30 @@ describe('processScrapedItem — סיווג התוצאה', () => {
     expect(latest.status).toBe('PENDING_REVIEW');
   });
 
+  it('קו הגבול: ציון 70 בדיוק מתפרסם אוטומטית, 67 כבר לא', async () => {
+    // הסף כולל (score >= 70), ולכן ציון על הגבול נחשב "מספיק בטוח".
+    // נעול בבדיקה כדי שלא יהיה צריך להסיק את זה מקריאת הקוד.
+    // 10→23 הוא יחס 2.3: round(25 × log2(2.3)) = 30, ולכן ציון 70.
+    const onTheLine = await withExistingMatch();
+    const onTheLineOutcome = await scrapeRun(onTheLine.source.id, [fields({ discountValue: 23 })]);
+    const onTheLineItem = (await sightingsOf('ext-1')).at(-1)!;
+
+    expect(onTheLineItem.confidenceScore).toBe(70);
+    expect(onTheLineOutcome).toEqual(['UPDATED']);
+
+    // מנקים כדי שהמקרה השני יתחיל ממצב זהה
+    await prisma.benefit.updateMany({ data: { lastScrapedItemId: null } });
+    await prisma.scrapedItem.deleteMany();
+
+    // 10→25 הוא יחס 2.5: round(25 × log2(2.5)) = 33, ולכן ציון 67.
+    const belowTheLine = await withExistingMatch();
+    const belowOutcome = await scrapeRun(belowTheLine.source.id, [fields({ discountValue: 25 })]);
+    const belowItem = (await sightingsOf('ext-1')).at(-1)!;
+
+    expect(belowItem.confidenceScore).toBe(67);
+    expect(belowOutcome).toEqual(['FLAGGED']);
+  });
+
   it('שתי בעיות יחד מצטברות', async () => {
     // כותרת קצרה (-30) יחד עם שינוי דרמטי (-60) מגיעים ל-10.
     const { source } = await withExistingMatch();
