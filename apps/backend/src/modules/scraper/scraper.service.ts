@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { AppError } from '../../lib/AppError';
 import { logger } from '../../lib/logger';
+import { benefitService } from '../benefit/benefit.service';
 import { scraperRepository } from './scraper.repository';
 import { robotsChecker } from './robotsChecker';
 import { matchingService, type RawScrapedFields } from './matching.service';
@@ -181,48 +182,82 @@ export const scraperService = {
 
     const run = await scraperRepository.createRun(sourceId);
     let itemsFound = 0;
-    let itemsCreated = 0;
     let itemsUpdated = 0;
     let itemsFlagged = 0;
+    let itemsSkipped = 0;
+    // itemsCreated נשאר 0 לאורך כל הריצה במכוון: סריקה לעולם אינה
+    // יוצרת הטבה חדשה — היא מעלה הצעה לתור הבדיקה, וההטבה נוצרת
+    // רק כשאדם מאשר אותה (reviewItem). השדה נשמר בסכמה לקראת
+    // שיוך אוטומטי עתידי.
+    const itemsCreated = 0;
 
     try {
       // הערה: fetchRawItems הוא ה"מנוע" בפועל (HTTP+cheerio או
       // Playwright, לפי source.renderMode) — לא ממומש בשלב הזה,
       // מסומן כ-TODO תשתיתי. הלוגיקה שמסביבו (matching, confidence,
       // ניהול run) היא הליבה שממומשת ומוכנה כבר עכשיו.
-      const rawItems: RawScrapedFields[] = await this.fetchRawItems(source);
+      const fetched = await this.fetchRawItems(source);
+      const rawItems: RawScrapedFields[] = fetched.items;
       itemsFound = rawItems.length;
+      itemsSkipped = fetched.skipped;
 
       for (const fields of rawItems) {
         const outcome = await this.processScrapedItem(source.id, run.id, fields);
-        if (outcome === 'CREATED') itemsCreated++;
         if (outcome === 'UPDATED') itemsUpdated++;
         if (outcome === 'FLAGGED') itemsFlagged++;
       }
 
-      await scraperRepository.finishRun(run.id, {
-        status: 'SUCCESS',
+      // ריצה שדילגה על כל מה שמצאה אינה הצלחה: זו החתימה של selector
+      // שנשבר אחרי שינוי מבנה באתר המקור. בלי הסימון הזה היא נראית
+      // בדיוק כמו "אין הטבות חדשות".
+      const allSkipped = itemsSkipped > 0 && itemsFound === 0;
+      const status = allSkipped ? 'PARTIAL' : 'SUCCESS';
+      if (allSkipped) {
+        logger.warn(
+          { sourceId, runId: run.id, itemsSkipped },
+          'Scraper run skipped every card it found — selectors are probably broken'
+        );
+      }
+
+      const finished = await scraperRepository.finishRun(run.id, {
+        status,
         itemsFound,
         itemsCreated,
         itemsUpdated,
         itemsFlagged,
+        itemsSkipped,
+        ...(allSkipped && {
+          errorMessage: `נמצאו ${itemsSkipped} כרטיסים בדף, אך אף אחד לא הכיל כותרת ומזהה תקינים — ייתכן שה-selectors אינם תואמים עוד למבנה האתר`,
+        }),
       });
-      await scraperRepository.updateSource(sourceId, { lastRunAt: new Date(), lastRunStatus: 'SUCCESS' });
+      await scraperRepository.updateSource(sourceId, { lastRunAt: new Date(), lastRunStatus: status });
+      return finished;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      await scraperRepository.finishRun(run.id, {
+      const failed = await scraperRepository.finishRun(run.id, {
         status: 'FAILED',
         itemsFound,
         itemsCreated,
         itemsUpdated,
         itemsFlagged,
+        itemsSkipped,
         errorMessage,
       });
       await scraperRepository.updateSource(sourceId, { lastRunAt: new Date(), lastRunStatus: 'FAILED' });
       logger.error({ sourceId, runId: run.id, err }, 'Scraper run failed');
-    }
 
-    return scraperRepository.findRunsBySource(sourceId, 1);
+      // נזרק ולא נבלע: קודם לכן הכשל הוחזר כתשובת 200 רגילה, והמנהל
+      // קיבל מסך ירוק על ריצה שנכשלה. פרטי הריצה נשמרים ב-details
+      // כדי שהדשבורד יוכל להציג מה בדיוק קרה.
+      throw new AppError('SCRAPER_RUN_FAILED', `Scraper run failed: ${errorMessage}`, 500, {
+        runId: failed.id,
+        itemsFound,
+        itemsUpdated,
+        itemsFlagged,
+        itemsSkipped,
+        errorMessage,
+      });
+    }
   },
 
   // מטפל בפריט בודד: matching -> confidence -> יצירת ScrapedItem ->
@@ -231,7 +266,7 @@ export const scraperService = {
     sourceId: string,
     runId: string,
     fields: RawScrapedFields
-  ): Promise<'CREATED' | 'UPDATED' | 'FLAGGED' | 'SKIPPED'> {
+  ): Promise<'UPDATED' | 'FLAGGED' | 'SKIPPED'> {
     const matchResult = await matchingService.match(sourceId, fields);
 
     if (matchResult.kind === 'UNCHANGED') return 'SKIPPED';
@@ -259,17 +294,18 @@ export const scraperService = {
       ...(matchResult.kind === 'UPDATE' && { matchedBenefit: { connect: { id: matchResult.benefitId } } }),
     });
 
-    if (!autoPublish) return 'FLAGGED';
-
-    if (matchResult.kind === 'UPDATE') {
+    // UNCHANGED כבר יצא למעלה, ולכן נותרו בדיוק שני מסלולים:
+    // עדכון להטבה קיימת שעבר את סף הביטחון, וכל השאר.
+    if (matchResult.kind === 'UPDATE' && autoPublish) {
       await this.applyUpdate(matchResult.benefitId, fields, item.id);
       return 'UPDATED';
     }
 
-    // matchResult.kind === 'NEW' אף פעם לא מגיע ל-autoPublish=true
-    // (ראו confidenceService.shouldAutoPublish) — משאיר את הענף הזה
-    // כ-safety net מפורש ולא כ-unreachable שקט.
-    return 'SKIPPED';
+    // הטבה חדשה תמיד מגיעה לכאן: shouldAutoPublish מחזיר false
+    // ל-NEW ללא תנאי, וגם אריתמטית ציון של NEW חסום ב-60 (ניכוי
+    // קבוע של 40) מול סף פרסום של 70. שתי ההגנות מכוונות — אין
+    // "אוטומטי" להטבה שמעולם לא הייתה במערכת.
+    return 'FLAGGED';
   },
 
   // מעדכן הטבה קיימת מתוצאת סריקה, כולל תיעוד sourceMetadata לכל
@@ -287,6 +323,25 @@ export const scraperService = {
     if (fields.shortDescription !== undefined) sourceMetadata.shortDescription = provenance;
     if (fields.discountValue !== undefined) sourceMetadata.discountValue = provenance;
 
+    // valueScore מחושב מחדש כשערך ההנחה השתנה, בדיוק כמו בעדכון
+    // ידני מהדשבורד. בלי זה הטבה שהסורק שיפר מ-10% ל-50% הייתה
+    // נשארת עם הציון הישן ושוקעת במיון בזמן שהיא הטובה במערכת —
+    // וזה קורה במסלול האוטומטי, בלי שאף אחד רואה.
+    // שאר הפרמטרים נלקחים מההטבה הקיימת: הסורק מספק רק ערך הנחה.
+    let valueScore: number | undefined;
+    if (fields.discountValue !== undefined) {
+      const existing = await prisma.benefit.findUnique({ where: { id: benefitId } });
+      if (existing) {
+        valueScore = await benefitService.computeValueScore({
+          benefitType: existing.benefitType,
+          discountValue: fields.discountValue,
+          discountUnit: existing.discountUnit ?? undefined,
+          minPurchaseAmount: existing.minPurchaseAmount ? Number(existing.minPurchaseAmount) : undefined,
+          categoryId: existing.categoryId,
+        });
+      }
+    }
+
     await prisma.benefit.update({
       where: { id: benefitId },
       data: {
@@ -294,6 +349,7 @@ export const scraperService = {
         ...(fields.shortDescription !== undefined && { shortDescription: fields.shortDescription }),
         ...(fields.discountValue !== undefined && { discountValue: fields.discountValue }),
         ...(fields.imageUrl !== undefined && { imageUrl: fields.imageUrl }),
+        ...(valueScore !== undefined && { valueScore }),
         sourceMetadata,
         lastScrapedItem: { connect: { id: scrapedItemId } },
       },
@@ -309,15 +365,18 @@ export const scraperService = {
     renderMode: string;
     scrapeConfig: unknown;
     requestDelayMs: number;
-  }): Promise<RawScrapedFields[]> {
+  }): Promise<{ items: RawScrapedFields[]; skipped: number }> {
     if (source.renderMode !== 'HTTP') {
       logger.warn({ renderMode: source.renderMode }, 'fetchRawItems: renderMode not supported yet, skipping run');
-      return [];
+      return { items: [], skipped: 0 };
     }
 
     const config = source.scrapeConfig as ScrapeConfig;
     const maxPages = config.maxPages ?? 1;
     const results: RawScrapedFields[] = [];
+    // כרטיסים שנמצאו בדף אך חסרו בהם שדות חובה. נספר ומדווח, כדי
+    // שאפשר יהיה להבחין בין "אין הטבות" לבין "ה-selector נשבר".
+    let skipped = 0;
 
     for (let page = 1; page <= maxPages; page++) {
       const pageUrl = new URL(source.baseUrl);
@@ -353,7 +412,11 @@ export const scraperService = {
         const $item = $(el);
         const title = extractField($item, config.fields.title);
         const externalId = extractField($item, config.fields.externalId);
-        if (!title || !externalId) return; // שדות חובה חסרים — מדלגים על כרטיס פגום
+        if (!title || !externalId) {
+          // שדות חובה חסרים — מדלגים על כרטיס פגום, אך סופרים אותו.
+          skipped++;
+          return;
+        }
 
         const imageUrl = resolveUrl(extractField($item, config.fields.imageUrl), source.baseUrl);
         const detailUrl = resolveUrl(extractField($item, config.fields.detailUrl), source.baseUrl);
@@ -373,7 +436,14 @@ export const scraperService = {
       if (page < maxPages) await sleep(source.requestDelayMs);
     }
 
-    return results;
+    if (skipped > 0) {
+      logger.warn(
+        { baseUrl: source.baseUrl, skipped, extracted: results.length },
+        'Some scraped cards were missing required fields and were skipped'
+      );
+    }
+
+    return { items: results, skipped };
   },
 
   // ---------- ScrapedItem: תור בדיקה ----------
@@ -409,6 +479,16 @@ export const scraperService = {
       if (!input.overrides?.categoryId) {
         throw AppError.validation('categoryId is required when approving a new benefit');
       }
+      // אותו חישוב שכל הטבה אחרת עוברת. benefitType כאן הוא 'OTHER'
+      // (הסורק אינו מזהה סוג הטבה), ולכן הציון יוצא 0 — אבל החישוב
+      // נעשה דרך אותה נקודה, כך שכשסיווג הסוג ישתפר הציון יתעדכן
+      // מעצמו במקום להישאר 0 שקט.
+      const valueScore = await benefitService.computeValueScore({
+        benefitType: 'OTHER',
+        discountValue: fields.discountValue,
+        categoryId: input.overrides.categoryId,
+      });
+
       const created = await prisma.benefit.create({
         data: {
           slug: matchingService.slugify(fields.title),
@@ -418,6 +498,7 @@ export const scraperService = {
           benefitType: 'OTHER',
           discountValue: fields.discountValue,
           imageUrl: fields.imageUrl,
+          valueScore,
           isActive: true,
           sourceMetadata: { title: { source: 'scraper', scrapedItemId: item.id } },
           lastScrapedItem: { connect: { id: item.id } },

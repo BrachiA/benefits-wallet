@@ -59,6 +59,14 @@ function translateBusinessMessage(message: string): string {
 // במקום ה-message הגנרי "Request validation failed". fieldLabels ממפה
 // שם שדה מה-DTO לתווית העברית שמוצגת לצידו באותו טופס.
 export function formatSaveError(err: unknown, fieldLabels: Record<string, string> = {}): string {
+  // כשל ריצת סורק מגיע עם code ייעודי ו-details מובנה. בלי הטיפול
+  // כאן הייתה מוצגת הודעת השרת באנגלית.
+  if (err instanceof ApiError && err.code === 'SCRAPER_RUN_FAILED') {
+    const details = err.details as { errorMessage?: string; itemsSkipped?: number } | undefined;
+    const reason = details?.errorMessage ? ` (${details.errorMessage})` : '';
+    return `הסריקה נכשלה${reason}. המקור לא עודכן — אפשר לנסות שוב, ואם זה חוזר כדאי לבדוק שהאתר עדיין זמין ושהגדרות הסריקה מתאימות לו.`;
+  }
+
   if (err instanceof ApiError && err.code === 'VALIDATION_ERROR') {
     if (typeof err.details === 'string') {
       return translateBusinessMessage(err.details);

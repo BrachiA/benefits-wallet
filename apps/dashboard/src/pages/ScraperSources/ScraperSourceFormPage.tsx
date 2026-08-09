@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { apiClient, formatSaveError } from '../../api/client';
 import { PageHeader, Field, Input, Select, Button } from '../../components/forms/FormPrimitives';
 import { Badge, statusBadge } from '../../components/Badge';
-import { sourceTypeLabels, type ScraperSource } from '../../types/scraperSource';
+import { sourceTypeLabels, type ScraperRunResult, type ScraperSource } from '../../types/scraperSource';
 
 const fieldLabels: Record<string, string> = {
   slug: 'מזהה URL (slug)',
@@ -36,6 +36,10 @@ export function ScraperSourceFormPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isActing, setIsActing] = useState(false); // מצב נפרד לפעולות (activate/run) לעומת שמירת טופס
   const [error, setError] = useState<string | null>(null);
+  // סיכום הריצה האחרונה שהופעלה מהמסך הזה. נפרד מ-error, כי ריצה
+  // יכולה להסתיים בהצלחה, בכישלון, או חלקית — ולמנהלת צריך להיות
+  // ברור מיד מה מתוך השלושה קרה, בלי לרענן ולהסתכל בעמודה.
+  const [runSummary, setRunSummary] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null);
   const [tosNotes, setTosNotes] = useState('');
   const [reviewerName, setReviewerName] = useState('');
 
@@ -109,9 +113,22 @@ export function ScraperSourceFormPage() {
 
   async function handleRunNow() {
     setError(null);
+    setRunSummary(null);
     setIsActing(true);
     try {
-      await apiClient.post(`/scraper/sources/${id}/run`, {});
+      const run = await apiClient.post<ScraperRunResult>(`/scraper/sources/${id}/run`, {});
+      // ריצה שדילגה על כל מה שמצאה מסתיימת PARTIAL — היא לא נכשלה,
+      // אבל גם לא באמת הצליחה, ולכן מוצגת כאזהרה ולא כהצלחה.
+      setRunSummary(
+        run.status === 'PARTIAL'
+          ? { tone: 'warning', text: run.errorMessage ?? 'הסריקה הסתיימה חלקית' }
+          : {
+              tone: 'success',
+              text: `הסריקה הסתיימה: ${run.itemsFound} פריטים נמצאו, ${run.itemsUpdated} עודכנו, ${run.itemsFlagged} הועברו לבדיקה${
+                run.itemsSkipped ? `, ${run.itemsSkipped} דולגו` : ''
+              }.`,
+            }
+      );
       loadSource();
     } catch (err) {
       setError(formatSaveError(err));
@@ -216,9 +233,26 @@ export function ScraperSourceFormPage() {
                 {source.isActive ? 'השבת מקור' : 'הפעל מקור'}
               </Button>
               <Button variant="secondary" onClick={handleRunNow} disabled={isActing || !source.isActive}>
-                הרץ עכשיו
+                {isActing ? 'סורק...' : 'הרץ עכשיו'}
               </Button>
             </div>
+
+            {runSummary && (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: 13,
+                  background:
+                    runSummary.tone === 'success' ? 'var(--status-success-bg)' : 'var(--status-warning-bg)',
+                  color:
+                    runSummary.tone === 'success' ? 'var(--status-success-text)' : 'var(--status-warning-text)',
+                }}
+              >
+                {runSummary.text}
+              </div>
+            )}
           </div>
         </>
       )}

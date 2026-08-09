@@ -41,4 +41,32 @@ export const couponRepository = {
   async incrementUsage(id: string) {
     return prisma.coupon.update({ where: { id }, data: { currentUses: { increment: 1 } } });
   },
+
+  // מימוש אטומי: כל התנאים נבדקים בתוך ה-WHERE של ה-UPDATE עצמו,
+  // כך שהבדיקה וההגדלה הן פעולה אחת ברמת ה-DB. הגרסה הקודמת קראה
+  // את הקופון, בדקה בקוד, ואז הגדילה — ושתי בקשות מקבילות על
+  // הקופון האחרון יכלו שתיהן לעבור את הבדיקה לפני שאחת מהן הגדילה.
+  //
+  // updateMany (ולא update) כי רק הוא מאפשר WHERE על שדות שאינם
+  // מפתח ייחודי, ומחזיר count במקום לזרוק — count=0 פירושו
+  // שהתנאים לא התקיימו ברגע הכתיבה.
+  //
+  // ההשוואה currentUses < maxUses היא בין שני שדות של אותה שורה,
+  // ולכן נעשית עם field reference של Prisma ולא בקוד.
+  async redeemIfAvailable(id: string): Promise<boolean> {
+    const result = await prisma.coupon.updateMany({
+      where: {
+        id,
+        isActive: true,
+        deletedAt: null,
+        AND: [
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+          // maxUses=null פירושו ללא הגבלה
+          { OR: [{ maxUses: null }, { currentUses: { lt: prisma.coupon.fields.maxUses } }] },
+        ],
+      },
+      data: { currentUses: { increment: 1 } },
+    });
+    return result.count > 0;
+  },
 };

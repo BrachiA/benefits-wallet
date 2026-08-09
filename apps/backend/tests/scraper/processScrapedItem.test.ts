@@ -204,46 +204,68 @@ describe('processScrapedItem — סיווג התוצאה', () => {
     return { source, benefit };
   }
 
-  it('שינוי ערך חד מנוכה מציון הביטחון ומתועד כסיבה', async () => {
-    const { source } = await withExistingMatch();
-
-    // 10 -> 90 הוא שינוי של 800%, הרבה מעל סף החשד (50%)
-    await scrapeRun(source.id, [fields({ discountValue: 90 })]);
-
-    const latest = (await sightingsOf('ext-1')).at(-1)!;
-    expect(latest.confidenceReasons.join(' ')).toContain('שינוי חד');
-    expect(latest.confidenceScore).toBe(75); // 100 - 25
-  });
-
-  it('נעילת התנהגות: ניכוי של שינוי חד לבדו אינו מספיק כדי לעצור פרסום אוטומטי', async () => {
-    // ההערה בקוד מתארת את הכלל כ"מעלה חשד שזו טעות סריקה", אבל
-    // הניכוי (25) מותיר 75 — מעל AUTO_PUBLISH_THRESHOLD שהוא 70.
-    // התוצאה בפועל: העדכון החשוד נכנס להטבה בלי אדם בלולאה.
-    // הבדיקה נועלת את ההתנהגות הקיימת כדי שתיקון עתידי של הסף או
-    // של הניכוי יהיה מודע ומכוון, ולא ישנה את זה בשקט.
+  it('שינוי ערך דרמטי עוצר פרסום אוטומטי ומעביר לבדיקה אנושית', async () => {
+    // 10 -> 90 הוא קפיצה של פי 9. הניכוי היחסי מגיע לתקרה (60),
+    // הציון יורד ל-40, והעדכון אינו נכנס בלי אישור.
     const { source, benefit } = await withExistingMatch();
 
     const outcomes = await scrapeRun(source.id, [fields({ discountValue: 90 })]);
 
-    expect(outcomes).toEqual(['UPDATED']);
-    const updated = await prisma.benefit.findUniqueOrThrow({ where: { id: benefit.id } });
-    expect(Number(updated.discountValue)).toBe(90);
+    expect(outcomes).toEqual(['FLAGGED']);
+    const latest = (await sightingsOf('ext-1')).at(-1)!;
+    expect(latest.status).toBe('PENDING_REVIEW');
+    expect(latest.confidenceScore).toBe(40);
+    expect(latest.confidenceReasons.join(' ')).toContain('שינוי חד');
+    // ההטבה עצמה לא נגעה
+    const unchanged = await prisma.benefit.findUniqueOrThrow({ where: { id: benefit.id } });
+    expect(Number(unchanged.discountValue)).toBe(10);
   });
 
-  it('שתי בעיות יחד כן מעבירות לתור', async () => {
-    // כותרת קצרה (-30) יחד עם שינוי חד (-25) מגיעים ל-45, ורק אז
-    // הפריט נעצר. זה הגבול בפועל של מנגנון הביטחון בעדכונים.
+  it('שינוי מתון חוצה-סף מנוכה בעדינות וממשיך להתפרסם אוטומטית', async () => {
+    // 10 -> 15 חוצה את סף השגרה (יחס 1.5) אבל אינו חשוד: ניכוי 15,
+    // ציון 85. הכלל אמור להבחין בין קפיצה לשינוי מחירים רגיל.
     const { source, benefit } = await withExistingMatch();
+
+    const outcomes = await scrapeRun(source.id, [fields({ discountValue: 15 })]);
+
+    expect(outcomes).toEqual(['UPDATED']);
+    const latest = (await sightingsOf('ext-1')).at(-1)!;
+    expect(latest.confidenceScore).toBe(85);
+    const updated = await prisma.benefit.findUniqueOrThrow({ where: { id: benefit.id } });
+    expect(Number(updated.discountValue)).toBe(15);
+  });
+
+  it('שינוי שגרתי מתחת לסף אינו מנוכה כלל', async () => {
+    const { source } = await withExistingMatch();
+
+    await scrapeRun(source.id, [fields({ discountValue: 12 })]); // יחס 1.2
+
+    const latest = (await sightingsOf('ext-1')).at(-1)!;
+    expect(latest.confidenceScore).toBe(100);
+    expect(latest.confidenceReasons).toEqual([]);
+  });
+
+  it('הניכוי סימטרי — ירידה חדה נחשבת חשודה כמו עלייה חדה', async () => {
+    const { source } = await withExistingMatch({ discountValue: 90 });
+    // המופע הקודם נרשם עם 10; מיישרים אותו לערך ההתחלתי החדש
+    await prisma.scrapedItem.updateMany({ data: { rawData: fields({ discountValue: 90 }) as never } });
+
+    await scrapeRun(source.id, [fields({ discountValue: 10 })]); // ירידה פי 9
+
+    const latest = (await sightingsOf('ext-1')).at(-1)!;
+    expect(latest.confidenceScore).toBe(40);
+    expect(latest.status).toBe('PENDING_REVIEW');
+  });
+
+  it('שתי בעיות יחד מצטברות', async () => {
+    // כותרת קצרה (-30) יחד עם שינוי דרמטי (-60) מגיעים ל-10.
+    const { source } = await withExistingMatch();
 
     const outcomes = await scrapeRun(source.id, [fields({ title: 'א', discountValue: 90 })]);
 
     expect(outcomes).toEqual(['FLAGGED']);
     const latest = (await sightingsOf('ext-1')).at(-1)!;
-    expect(latest.status).toBe('PENDING_REVIEW');
-    expect(latest.confidenceScore).toBe(45);
-    // ההטבה לא נגעה — עדכון חשוד לא נכנס בלי אישור
-    const unchanged = await prisma.benefit.findUniqueOrThrow({ where: { id: benefit.id } });
-    expect(Number(unchanged.discountValue)).toBe(10);
+    expect(latest.confidenceScore).toBe(10);
   });
 });
 

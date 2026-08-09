@@ -6,9 +6,37 @@ export type ConfidenceResult = { score: number; reasons: string[] };
 // קבוע יחיד ומרוכז — קל לכייל בלי לחפש בקוד.
 export const AUTO_PUBLISH_THRESHOLD = 70;
 
-// אחוז שינוי בערך הנחה שנחשב "חשוד" ולא רק "עדכון שגרתי" (למשל
-// אתר עדכן טעות דפוס קטנה מול שינוי שמרמז על שגיאת סריקה).
-const SUSPICIOUS_VALUE_CHANGE_PERCENT = 50;
+// ---- ניכוי על שינוי בערך ההנחה ----
+//
+// שינוי מתחת ליחס הזה נחשב עדכון שגרתי ואינו מנוכה כלל. יחס 1.5
+// שקול לשינוי של 50% מהערך הקודם — אותו סף שהיה כאן קודם.
+const ROUTINE_CHANGE_RATIO = 1.5;
+// מקדם הניכוי הלוגריתמי. נבחר כך ששינוי של פי ~2.3 ומעלה כבר מוריד
+// את הציון מתחת לסף הפרסום האוטומטי.
+const VALUE_CHANGE_WEIGHT = 25;
+const MIN_VALUE_CHANGE_DEDUCTION = 10;
+const MAX_VALUE_CHANGE_DEDUCTION = 60;
+
+// הניכוי יחסי לגודל השינוי ולא קבוע. הגרסה הקודמת ניכתה 25 נקודות
+// על כל שינוי מעל 50%, כך ש-10→15 ו-10→90 קיבלו בדיוק אותו טיפול,
+// ושתיהן נשארו על 75 — מעל סף הפרסום האוטומטי. כלומר שינוי של פי 9
+// התפרסם בלי אדם בלולאה, בניגוד לכוונת הכלל.
+//
+// לוגריתמי ולא ליניארי: מה שמעניין הוא סדר הגודל של הקפיצה (פי 2,
+// פי 4, פי 9) ולא ההפרש המוחלט, וכך הכלל מתנהג זהה על הנחות של 10%
+// ושל 1000 ש"ח. סימטרי בכוונה — ירידה חדה חשודה כמו עלייה חדה.
+function valueChangeDeduction(previous: number, next: number): number {
+  if (previous === next) return 0;
+
+  // מעבר אל/מ-אפס אינו ניתן לביטוי כיחס, והוא תמיד קפיצה מהותית.
+  if (previous === 0 || next === 0) return MAX_VALUE_CHANGE_DEDUCTION;
+
+  const ratio = Math.max(previous / next, next / previous);
+  if (ratio < ROUTINE_CHANGE_RATIO) return 0;
+
+  const raw = Math.round(VALUE_CHANGE_WEIGHT * Math.log2(ratio));
+  return Math.max(MIN_VALUE_CHANGE_DEDUCTION, Math.min(MAX_VALUE_CHANGE_DEDUCTION, raw));
+}
 
 export const confidenceService = {
   // מחשב ציון 0-100 + נימוקים קריאים לאדם (מוצגים בדשבורד תחת "why
@@ -37,12 +65,15 @@ export const confidenceService = {
 
     // כלל 3: שינוי ערך חד מהערך הקודם — עלול להעיד על טעות סריקה
     // (למשל: פרסר תפס "50" מתוך "1 מתוך 50 קופונים" ולא את ה-10%
-    // האמיתיים) ולא על מבצע אמיתי.
+    // האמיתיים) ולא על מבצע אמיתי. הניכוי גדל עם סדר הגודל של
+    // השינוי, ראו valueChangeDeduction.
     if (matchResult.kind === 'UPDATE' && previousValue !== undefined && fields.discountValue !== undefined) {
-      const changePercent = previousValue === 0 ? 100 : (Math.abs(fields.discountValue - previousValue) / previousValue) * 100;
-      if (changePercent > SUSPICIOUS_VALUE_CHANGE_PERCENT) {
+      const deduction = valueChangeDeduction(previousValue, fields.discountValue);
+      if (deduction > 0) {
+        const changePercent =
+          previousValue === 0 ? 100 : (Math.abs(fields.discountValue - previousValue) / previousValue) * 100;
         reasons.push(`שינוי חד בערך ההנחה: ${previousValue} -> ${fields.discountValue} (${changePercent.toFixed(0)}%)`);
-        score -= 25;
+        score -= deduction;
       }
     }
 

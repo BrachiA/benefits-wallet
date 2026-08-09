@@ -668,6 +668,10 @@ model ScraperRun {
   itemsCreated Int               @default(0) // הצעות הטבה חדשה
   itemsUpdated Int               @default(0) // התאמה להטבה קיימת עם שינוי
   itemsFlagged Int               @default(0) // הועברו לתור בדיקה (confidence נמוך)
+  // כרטיסים שנמצאו בדף אך חסרו בהם כותרת/מזהה. ערך גבוה מול
+  // itemsFound נמוך הוא החתימה של selector שנשבר — בלי המונה הזה
+  // ריצה כזו נראית זהה ל"אין הטבות חדשות".
+  itemsSkipped Int               @default(0)
 
   errorMessage String?
 

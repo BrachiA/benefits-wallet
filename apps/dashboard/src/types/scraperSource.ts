@@ -16,6 +16,18 @@ export type ScraperSource = {
   lastRunStatus?: 'SUCCESS' | 'PARTIAL' | 'FAILED';
 };
 
+// תוצאת POST /scraper/sources/:id/run — רשומת הריצה שהסתיימה.
+// כישלון אינו מגיע לכאן אלא כשגיאה (SCRAPER_RUN_FAILED).
+export type ScraperRunResult = {
+  id: string;
+  status: 'SUCCESS' | 'PARTIAL' | 'FAILED';
+  itemsFound: number;
+  itemsUpdated: number;
+  itemsFlagged: number;
+  itemsSkipped: number;
+  errorMessage?: string;
+};
+
 export const sourceTypeLabels: Record<string, string> = {
   ISSUER_SITE: 'אתר מנפיק',
   BRAND_SITE: 'אתר מותג',

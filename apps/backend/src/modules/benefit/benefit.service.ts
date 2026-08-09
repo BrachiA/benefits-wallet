@@ -101,15 +101,21 @@ export const benefitService = {
     const programIds = scopes.map((s) => s.programId).filter(Boolean) as string[];
     const brandIds = scopes.map((s) => s.brandId).filter(Boolean) as string[];
     const storeIds = scopes.map((s) => s.storeId).filter(Boolean) as string[];
+    // cityId נבדק כמו כל שאר הצירים. בלעדיו אפשר היה לשמור הגבלה
+    // גיאוגרפית שמצביעה לעיר שאינה קיימת — ה-FK ב-DB אמנם תופס
+    // זאת, אך רק כשגיאת P2003 סתומה במקום הודעה מובנת.
+    const cityIds = scopes.map((s) => s.cityId).filter(Boolean) as string[];
 
-    const [programCount, brandCount, storeCount] = await Promise.all([
+    const [programCount, brandCount, storeCount, cityCount] = await Promise.all([
       programIds.length ? prisma.program.count({ where: { id: { in: programIds } } }) : 0,
       brandIds.length ? prisma.brand.count({ where: { id: { in: brandIds } } }) : 0,
       storeIds.length ? prisma.store.count({ where: { id: { in: storeIds } } }) : 0,
+      cityIds.length ? prisma.city.count({ where: { id: { in: cityIds } } }) : 0,
     ]);
 
     if (programCount !== new Set(programIds).size) throw AppError.validation('One or more programId not found');
     if (brandCount !== new Set(brandIds).size) throw AppError.validation('One or more brandId not found');
     if (storeCount !== new Set(storeIds).size) throw AppError.validation('One or more storeId not found');
+    if (cityCount !== new Set(cityIds).size) throw AppError.validation('One or more cityId not found');
   },
 };

@@ -41,12 +41,27 @@ export const couponService = {
   // לוגיקת מימוש: נבדקת בנפרד מ-CRUD כי היא תיקרא בעתיד מ-endpoint
   // ייעודי ("redeem"), לא רק מהדשבורד.
   async redeem(id: string) {
-    const coupon = await this.getById(id);
-    if (!coupon.isActive) throw AppError.validation('Coupon is not active');
-    if (coupon.expiresAt && coupon.expiresAt < new Date()) throw AppError.validation('Coupon has expired');
-    if (coupon.maxUses !== null && coupon.currentUses >= coupon.maxUses) {
-      throw AppError.validation('Coupon usage limit reached');
+    await this.getById(id); // 404 אם הקופון לא קיים כלל
+
+    // הבדיקה וההגדלה נעשות כפעולה אטומית אחת ב-DB. חשוב שזה יהיה
+    // הצעד הראשון ולא בדיקה מקדימה בקוד: קופון אחרון שנתפס בשתי
+    // בקשות מקבילות היה עובר את שתיהן.
+    const redeemed = await couponRepository.redeemIfAvailable(id);
+
+    if (!redeemed) {
+      // הפעולה נדחתה. שולפים שוב רק כדי להסביר *למה* — זו הודעה
+      // למשתמש, לא שער הגנה (השער כבר נאכף למעלה).
+      const coupon = await this.getById(id);
+      if (!coupon.isActive) throw AppError.validation('Coupon is not active');
+      if (coupon.expiresAt && coupon.expiresAt < new Date()) throw AppError.validation('Coupon has expired');
+      if (coupon.maxUses !== null && coupon.currentUses >= coupon.maxUses) {
+        throw AppError.validation('Coupon usage limit reached');
+      }
+      // התנאים נראים תקינים עכשיו אך הכתיבה נדחתה — כלומר בקשה
+      // מקבילה תפסה את השימוש האחרון בין שתי הפעולות.
+      throw AppError.validation('Coupon is no longer available');
     }
-    return couponRepository.incrementUsage(id);
+
+    return this.getById(id);
   },
 };

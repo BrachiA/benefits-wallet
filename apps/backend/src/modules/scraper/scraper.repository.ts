@@ -57,6 +57,7 @@ export const scraperRepository = {
       itemsCreated: number;
       itemsUpdated: number;
       itemsFlagged: number;
+      itemsSkipped?: number;
       errorMessage?: string;
     }
   ) {
