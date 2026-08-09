@@ -31,3 +31,6 @@ Thumbs.db
 
 # Prisma engine cache (נוצר מקומית)
 apps/backend/prisma/*.db
+
+# Vitest
+apps/backend/tests/**/__snapshots__/
