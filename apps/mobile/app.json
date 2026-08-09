@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Benefits Wallet",
+    "slug": "benefits-wallet",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "ios": { "supportsTablet": false },
+    "android": {
+      "adaptiveIcon": { "backgroundColor": "#F7F7FB" }
+    },
+    "extra": {
+      "eas": {}
+    }
+  }
+}

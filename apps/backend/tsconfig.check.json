@@ -1,0 +1,11 @@
+{
+  // תצורת typecheck בלבד: מרחיבה את ה-build config כדי לכלול גם את
+  // prisma/seed.ts, שנמצא מחוץ ל-rootDir של ה-build (src) ולכן לא
+  // יכול להיכלל ב-tsconfig.json הראשי בלי לשבור את `tsc` (TS6059).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "prisma/seed.ts"]
+}

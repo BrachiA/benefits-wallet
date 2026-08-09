@@ -1,0 +1,719 @@
+// ============================================================
+// Benefits Wallet — Prisma Schema
+// תרגום ישיר של מודל הנתונים משלב 1.
+// כל הערה בקוד מסבירה למה, לא רק מה — לפי דרישת "צורת העבודה".
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------------
+// ENUMS
+// ------------------------------------------------------------
+
+enum ProgramType {
+  CREDIT_CARD
+  CUSTOMER_CLUB
+  EMPLOYEE_CLUB
+  RETAILER_CLUB
+  OTHER
+}
+
+enum BenefitType {
+  DISCOUNT_PERCENT
+  DISCOUNT_FIXED
+  CASHBACK
+  POINTS
+  GIFT
+  TWO_FOR_ONE
+  FREE_SHIPPING
+  OTHER
+}
+
+enum DiscountUnit {
+  PERCENT
+  ILS
+  POINTS
+}
+
+enum Channel {
+  ONLINE
+  IN_STORE
+  BOTH
+}
+
+enum CouponType {
+  SINGLE_USE_SHARED
+  UNIQUE_PER_USER
+}
+
+enum MediaEntityType {
+  BRAND
+  PROGRAM
+  BENEFIT
+  CAMPAIGN
+  STORE
+}
+
+enum MediaAssetType {
+  LOGO
+  COVER
+  GALLERY
+  ICON
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  ACTIVATE
+  DEACTIVATE
+}
+
+enum NotificationTrigger {
+  ENDING_SOON
+  NEW_BENEFIT
+  PRICE_DROP
+}
+
+// ------------------------------------------------------------
+// SCRAPER ENUMS
+// ------------------------------------------------------------
+
+enum ScraperSourceType {
+  ISSUER_SITE
+  BRAND_SITE
+  AGGREGATOR_SITE
+}
+
+// קובע איזה "מנוע" ה-Runner יפעיל למקור הזה — data-driven, לא ענף
+// קוד נפרד לכל אתר. HTTP = fetch+cheerio (זול). HEADLESS_BROWSER =
+// Playwright (יקר יותר בזיכרון/זמן, נדרש לאתרי React/Vue).
+enum ScraperRenderMode {
+  HTTP
+  HEADLESS_BROWSER
+}
+
+// שער חוקי-אתי: מקור לא יכול לרוץ בפועל בלי אישור ידני מפורש,
+// גם אם isActive=true. ראו הערה מפורטת ב-ScraperSource.tosStatus.
+enum TosReviewStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum ScraperRunStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+// סטטוס פריט שנסרק: תוצאה של Matching Engine + Confidence Scoring.
+enum ScrapedItemStatus {
+  AUTO_PUBLISHED
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+// ------------------------------------------------------------
+// ISSUER — המנפיק (MAX, Cal, ישראכרט...)
+// ------------------------------------------------------------
+
+model Issuer {
+  id            String    @id @default(uuid())
+  slug          String    @unique
+  name          String
+  nameEn        String?
+  logoUrl       String?
+  brandColor    String? // HEX, לצביעת כרטיסים ב-UI
+  websiteUrl    String?
+  supportPhone  String?
+  isActive      Boolean   @default(true)
+  sortOrder     Int       @default(0)
+
+  programs      Program[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime? // Soft Delete: מנפיק לא נמחק, הטבות היסטוריות תלויות בו
+
+  @@index([isActive, sortOrder])
+  @@map("issuers")
+}
+
+// ------------------------------------------------------------
+// PROGRAM — הישות המאוחדת: כרטיס אשראי / מועדון לקוחות / כל סוג עתידי
+// ------------------------------------------------------------
+
+model Program {
+  id               String      @id @default(uuid())
+  issuerId         String
+  issuer           Issuer      @relation(fields: [issuerId], references: [id])
+
+  // היררכיה: "MAX Platinum" הוא ילד של "MAX"
+  parentProgramId  String?
+  parentProgram    Program?    @relation("ProgramHierarchy", fields: [parentProgramId], references: [id])
+  childPrograms    Program[]   @relation("ProgramHierarchy")
+
+  // materialized path, למשל "max/max-platinum" — מתוחזק בשכבת ה-Service
+  // מאפשר שאילתת "כל הצאצאים" עם LIKE, בלי recursive CTE בכל בקשה
+  path             String
+
+  slug             String      @unique
+  name             String
+  shortName        String?
+  type             ProgramType
+
+  logoUrl          String?
+  cardImageUrl     String?
+  color            String?
+
+  description      String?
+  joinUrl          String?
+  termsUrl         String?
+  annualFee        Decimal?    @db.Decimal(10, 2)
+
+  // שדות ספציפיים-לסוג שלא הצדיקו עמודה נפרדת (ולידציה בשכבת ה-Service)
+  metadata         Json?
+
+  isActive         Boolean     @default(true)
+  isPopular        Boolean     @default(false)
+  sortOrder        Int         @default(0)
+
+  benefitScopes    BenefitScope[]
+  scraperSources   ScraperSource[]
+
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  deletedAt        DateTime?
+
+  @@index([issuerId])
+  @@index([type, isActive])
+  @@index([path])
+  @@map("programs")
+}
+
+// ------------------------------------------------------------
+// CATEGORY — עץ קטגוריות, משמש גם הטבות וגם מותגים
+// ------------------------------------------------------------
+
+model Category {
+  id         String     @id @default(uuid())
+  slug       String     @unique
+  name       String
+  nameEn     String?
+
+  parentId   String?
+  parent     Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children   Category[] @relation("CategoryHierarchy")
+
+  path       String
+
+  iconName   String? // שם אייקון מספריית SVG פנימית, לא URL
+  color      String?
+  sortOrder  Int        @default(0)
+  isActive   Boolean    @default(true)
+
+  brands     Brand[]
+  benefits   Benefit[]
+
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  deletedAt  DateTime?
+
+  @@index([parentId])
+  @@index([path])
+  @@map("categories")
+}
+
+// ------------------------------------------------------------
+// BRAND — המותג שהמשתמש מזהה (זארה, פוקס, איקאה...)
+// ------------------------------------------------------------
+
+model Brand {
+  id                String     @id @default(uuid())
+  slug              String     @unique
+  name              String
+  nameEn            String?
+
+  parentBrandId     String?
+  parentBrand       Brand?     @relation("BrandGroup", fields: [parentBrandId], references: [id])
+  childBrands       Brand[]    @relation("BrandGroup")
+
+  categoryId        String
+  category          Category   @relation(fields: [categoryId], references: [id])
+
+  logoUrl           String?
+  coverImageUrl     String?
+  websiteUrl        String?
+  onlineShopUrl     String?
+  description       String?
+
+  hasOnlineStore    Boolean    @default(false)
+  hasPhysicalStores Boolean    @default(false)
+
+  // חיפוש דו-לשוני: "זארה", "zara" וכו'
+  searchKeywords    String[]   @default([])
+
+  isActive          Boolean    @default(true)
+  sortOrder         Int        @default(0)
+
+  stores            Store[]
+  benefitScopes     BenefitScope[]
+  scraperSources    ScraperSource[]
+
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  deletedAt         DateTime?
+
+  @@index([categoryId])
+  @@map("brands")
+}
+
+// ------------------------------------------------------------
+// STORE — סניף פיזי של מותג
+// ------------------------------------------------------------
+
+model Store {
+  id             String     @id @default(uuid())
+  brandId        String
+  brand          Brand      @relation(fields: [brandId], references: [id])
+
+  name           String
+  address        String?
+
+  cityId         String?
+  city           City?      @relation(fields: [cityId], references: [id])
+
+  lat            Decimal?   @db.Decimal(9, 6)
+  lng            Decimal?   @db.Decimal(9, 6)
+
+  phone          String?
+  openingHours   Json? // מבנה שבועי + חריגים
+
+  isActive       Boolean    @default(true)
+
+  benefitScopes  BenefitScope[]
+
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  deletedAt      DateTime?
+
+  @@index([brandId])
+  @@index([cityId])
+  @@index([lat, lng]) // בסיס ל"קרוב אליי" עם bounding box; PostGIS רק אם יידרש בעתיד
+  @@map("stores")
+}
+
+model City {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  regionId      String?
+  region        Region?        @relation(fields: [regionId], references: [id])
+  stores        Store[]
+  benefitScopes BenefitScope[]
+
+  @@map("cities")
+}
+
+model Region {
+  id    String @id @default(uuid())
+  name  String @unique
+  cities City[]
+
+  @@map("regions")
+}
+
+// ------------------------------------------------------------
+// BENEFIT — הישות המרכזית. "נקייה" מ-FK לספק — ראו BenefitScope
+// ------------------------------------------------------------
+
+model Benefit {
+  id                  String        @id @default(uuid())
+  slug                String        @unique
+  title               String
+  shortDescription    String
+  fullDescription     String?
+
+  categoryId          String
+  category            Category      @relation(fields: [categoryId], references: [id])
+
+  benefitType         BenefitType
+  discountValue       Decimal?      @db.Decimal(10, 2)
+  discountUnit        DiscountUnit?
+  minPurchaseAmount   Decimal?      @db.Decimal(10, 2)
+  maxDiscountAmount   Decimal?      @db.Decimal(10, 2)
+
+  // ציון מנורמל 0-100, מחושב בשכבת ה-Service — לא מוזן ידנית ע"י המנהל
+  // זהו הבסיס למנוע ההמלצות (שלב 9)
+  valueScore          Int           @default(0)
+
+  requiresCoupon      Boolean       @default(false)
+  channel             Channel       @default(BOTH)
+
+  termsAndConditions  String?
+  externalUrl         String?
+  imageUrl            String?
+
+  startDate           DateTime?
+  endDate             DateTime?
+
+  isPopular           Boolean       @default(false)
+  isFeatured          Boolean       @default(false)
+  isActive            Boolean       @default(true) // kill-switch ידני, בנפרד מתאריכים
+  priority            Int           @default(0)
+
+  viewCount           Int           @default(0)
+  favoriteCount        Int          @default(0)
+
+  // מפה של שדה -> מקור העדכון האחרון שלו, למשל:
+  // { "title": { "source": "scraper", "scraperSourceId": "...", "scrapedAt": "..." },
+  //   "discountValue": { "source": "manual", "updatedBy": "admin@..." } }
+  // נבחר כ-JSON על הרשומה ולא כטבלת FieldProvenance נפרדת: עקבי עם
+  // metadata על Program, ולא מוסיף טבלה שצריך לתחזק בשלב הזה.
+  sourceMetadata      Json?
+
+  // הצבעה לפריט הסריקה האחרון שעדכן את ההטבה — נוח למעקב "מאיפה
+  // בא העדכון האחרון" בלי לפרסר את sourceMetadata.
+  lastScrapedItemId   String?       @unique
+  lastScrapedItem     ScrapedItem?  @relation("BenefitLastScrapedItem", fields: [lastScrapedItemId], references: [id])
+
+  scopes              BenefitScope[]
+  coupons             Coupon[]
+  tags                BenefitTag[]
+  campaigns           CampaignBenefit[]
+  notifications       Notification[]
+  scrapedItems        ScrapedItem[]  @relation("ScrapedItemMatchedBenefit")
+
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  deletedAt           DateTime?
+
+  @@index([categoryId])
+  @@index([isActive, startDate, endDate]) // אינדקס הבקשה הכי נפוצה: Home Screen
+  @@index([isPopular, priority])
+  @@map("benefits")
+}
+
+// ------------------------------------------------------------
+// BENEFIT SCOPE — טבלת הכללים: למי ההטבה תקפה
+// שורה = תנאי AND בין השדות שאינם null. כמה שורות לאותה הטבה = OR ביניהן.
+// ------------------------------------------------------------
+
+model BenefitScope {
+  id         String   @id @default(uuid())
+
+  benefitId  String
+  benefit    Benefit  @relation(fields: [benefitId], references: [id], onDelete: Cascade)
+
+  programId  String? // null = כל המועדונים
+  program    Program? @relation(fields: [programId], references: [id])
+
+  brandId    String? // null = כל המותגים
+  brand      Brand?   @relation(fields: [brandId], references: [id])
+
+  storeId    String? // null = כל סניפי המותג
+  store      Store?   @relation(fields: [storeId], references: [id])
+
+  cityId     String? // הגבלה גיאוגרפית בלי סניף ספציפי
+  city       City?    @relation(fields: [cityId], references: [id])
+
+  createdAt  DateTime @default(now())
+
+  // אין Soft Delete — טבלת קישור טהורה
+
+  @@index([programId, brandId])
+  @@index([programId, storeId])
+  @@index([brandId])
+  @@index([benefitId])
+  @@map("benefit_scopes")
+}
+
+// ------------------------------------------------------------
+// COUPON
+// ------------------------------------------------------------
+
+model Coupon {
+  id          String     @id @default(uuid())
+  benefitId   String
+  benefit     Benefit    @relation(fields: [benefitId], references: [id], onDelete: Cascade)
+
+  code        String
+  type        CouponType @default(SINGLE_USE_SHARED)
+
+  maxUses     Int?
+  currentUses Int        @default(0)
+
+  expiresAt   DateTime?
+  isActive    Boolean    @default(true)
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  @@index([benefitId])
+  @@map("coupons")
+}
+
+// ------------------------------------------------------------
+// CAMPAIGN — מארז הטבות (למשל "בלאק פריידיי")
+// ------------------------------------------------------------
+
+model Campaign {
+  id              String            @id @default(uuid())
+  slug            String            @unique
+  title           String
+  description     String?
+  bannerImageUrl  String?
+
+  startDate       DateTime
+  endDate         DateTime
+  isActive        Boolean           @default(true)
+  sortOrder       Int               @default(0)
+
+  benefits        CampaignBenefit[]
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+
+  @@map("campaigns")
+}
+
+model CampaignBenefit {
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  benefitId  String
+  benefit    Benefit  @relation(fields: [benefitId], references: [id], onDelete: Cascade)
+  sortOrder  Int      @default(0)
+
+  @@id([campaignId, benefitId])
+  @@map("campaign_benefits")
+}
+
+// ------------------------------------------------------------
+// TAG
+// ------------------------------------------------------------
+
+model Tag {
+  id         String       @id @default(uuid())
+  slug       String       @unique
+  name       String
+  color      String?
+  sortOrder  Int          @default(0)
+  isActive   Boolean      @default(true)
+
+  benefits   BenefitTag[]
+
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  deletedAt  DateTime?
+
+  @@map("tags")
+}
+
+model BenefitTag {
+  benefitId String
+  benefit   Benefit @relation(fields: [benefitId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([benefitId, tagId])
+  @@index([tagId, benefitId])
+  @@map("benefit_tags")
+}
+
+// ------------------------------------------------------------
+// MEDIA ASSET — polymorphic, נדרש עבור "העלה לוגו / העלה תמונות" בדשבורד
+// אין FK אמיתי ברמת DB על entityId — נאכף בשכבת ה-Service.
+// ------------------------------------------------------------
+
+model MediaAsset {
+  id           String          @id @default(uuid())
+  entityType   MediaEntityType
+  entityId     String
+  assetType    MediaAssetType
+
+  originalUrl  String
+  cdnUrl       String?
+
+  width        Int?
+  height       Int?
+  sizeBytes    Int?
+
+  uploadedAt   DateTime        @default(now())
+
+  @@index([entityType, entityId])
+  @@map("media_assets")
+}
+
+// ------------------------------------------------------------
+// AUDIT LOG — append-only, נדרש כי לדשבורד אין Authentication בשלב 1
+// ------------------------------------------------------------
+
+model AuditLog {
+  id             String          @id @default(uuid())
+  entityType     String
+  entityId       String
+  action         AuditAction
+  changedFields  Json?
+  performedBy    String? // null בשלב 1, מוכן ל-userId עתידי
+  createdAt      DateTime        @default(now())
+
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+// ------------------------------------------------------------
+// NOTIFICATION — מתוכננת, לא ממומשת (שלב 10)
+// מוגדרת עכשיו כדי ש-Benefit לא יזדקק לשינוי מבני בעתיד
+// ------------------------------------------------------------
+
+model Notification {
+  id                String              @id @default(uuid())
+  title             String
+  body              String
+
+  relatedBenefitId  String?
+  relatedBenefit    Benefit?            @relation(fields: [relatedBenefitId], references: [id])
+
+  triggerType       NotificationTrigger
+  scheduledFor      DateTime
+
+  createdAt         DateTime            @default(now())
+
+  @@map("notifications")
+}
+
+// ------------------------------------------------------------
+// SCRAPER SOURCE — הגדרת מקור סריקה. data-driven במלואו: מקור חדש
+// = שורה בטבלה, לא deploy. "isActive" בלבד אינו מספיק כדי להריץ —
+// ראו tosStatus, שהוא שער חוקי-אתי נפרד ומכוון.
+// ------------------------------------------------------------
+
+model ScraperSource {
+  id                String            @id @default(uuid())
+  slug              String            @unique
+  name              String // "MAX benefits page"
+  sourceType        ScraperSourceType
+
+  baseUrl           String
+  renderMode        ScraperRenderMode @default(HTTP)
+
+  // קונפיגורציית סריקה גולמית: selectors, מיפוי שדות ל-Benefit,
+  // paths לכל קטגוריה. data-driven — הרנר קורא מכאן, לא מקודד.
+  // דוגמה: { "listSelector": ".benefit-card", "fields": { "title": ".title",
+  //          "discountValue": ".discount-badge" }, "paginationParam": "page" }
+  scrapeConfig      Json
+
+  // עוגן שיוך: תוצאה שנמצאת במקור הזה משויכת אוטומטית, בלי לדרוש
+  // שכל פריט סרוק "יידע" לאיזה מועדון/מותג הוא שייך.
+  defaultProgramId  String?
+  defaultProgram    Program?          @relation(fields: [defaultProgramId], references: [id])
+  defaultBrandId    String?
+  defaultBrand      Brand?            @relation(fields: [defaultBrandId], references: [id])
+
+  requestDelayMs    Int               @default(1000) // rate limiting מכבד כלפי המקור
+  scheduleCron      String            @default("0 3 * * *") // ברירת מחדל: פעם ביום, 03:00
+
+  // שער חוקי-אתי: מקור לא ירוץ בפועל (גם אם isActive=true) עד
+  // שאדם בדק את ה-Terms of Service שלו וסימן אישור מפורש בדשבורד.
+  // robots.txt נבדק אוטומטית בקוד כרשת ביטחון נוספת, לא כתחליף.
+  tosStatus         TosReviewStatus   @default(PENDING_REVIEW)
+  tosReviewedBy     String?
+  tosReviewedAt     DateTime?
+  tosNotes          String?
+
+  isActive          Boolean           @default(false) // ברירת מחדל false בכוונה: לא רץ עד הפעלה מודעת
+  lastRunAt         DateTime?
+  lastRunStatus     ScraperRunStatus?
+
+  runs              ScraperRun[]
+  scrapedItems      ScrapedItem[]
+
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  deletedAt         DateTime?
+
+  @@index([isActive, tosStatus])
+  @@map("scraper_sources")
+}
+
+// ------------------------------------------------------------
+// SCRAPER RUN — לוג ריצה בודדת (Cron יומי לכל מקור פעיל)
+// ------------------------------------------------------------
+
+model ScraperRun {
+  id           String            @id @default(uuid())
+  sourceId     String
+  source       ScraperSource     @relation(fields: [sourceId], references: [id])
+
+  startedAt    DateTime          @default(now())
+  finishedAt   DateTime?
+  status       ScraperRunStatus  @default(PARTIAL)
+
+  itemsFound   Int               @default(0)
+  itemsCreated Int               @default(0) // הצעות הטבה חדשה
+  itemsUpdated Int               @default(0) // התאמה להטבה קיימת עם שינוי
+  itemsFlagged Int               @default(0) // הועברו לתור בדיקה (confidence נמוך)
+
+  errorMessage String?
+
+  items        ScrapedItem[]
+
+  @@index([sourceId, startedAt])
+  @@map("scraper_runs")
+}
+
+// ------------------------------------------------------------
+// SCRAPED ITEM — פריט בודד שנשלף. externalId הוא המפתח שמאפשר
+// לזהות "ראיתי את זה כבר" בריצה הבאה, בלי להסתמך על התאמת טקסט.
+// ------------------------------------------------------------
+
+model ScrapedItem {
+  id                     String            @id @default(uuid())
+
+  sourceId               String
+  source                 ScraperSource     @relation(fields: [sourceId], references: [id])
+  runId                  String
+  run                    ScraperRun        @relation(fields: [runId], references: [id])
+
+  // מזהה יציב מהמקור עצמו (URL של דף ההטבה, או ID שמופיע ב-HTML) —
+  // לא טקסט חופשי. unique יחד עם sourceId מאפשר לזהות "ראינו כבר".
+  externalId             String
+
+  // מה שנשלף גולמית, לפני מיפוי ל-Benefit — נשמר לצורך debug/audit
+  // ולאפשר עיבוד מחדש אם לוגיקת המיפוי משתפרת בעתיד.
+  rawData                Json
+
+  // Matching Engine: null = לא נמצאה הטבה קיימת (מועמדת לחדשה).
+  // לא-null = נמצאה התאמה, זהו עדכון לרשומה קיימת.
+  matchedBenefitId       String?
+  matchedBenefit         Benefit?          @relation("ScrapedItemMatchedBenefit", fields: [matchedBenefitId], references: [id])
+
+  // Confidence Scoring: 0-100. נגזר מכללי סף (הטבה חדשה לגמרי,
+  // שינוי ערך > X%, שדה קריטי חסר) — לא מוזן ידנית.
+  confidenceScore        Int
+  confidenceReasons      String[]          @default([]) // לשקיפות בדשבורד: "why flagged"
+
+  status                 ScrapedItemStatus @default(PENDING_REVIEW)
+  reviewedBy             String?
+  reviewedAt             DateTime?
+
+  // back-relation: הטבה שסומנה כ"עודכנה לאחרונה מפריט הזה"
+  benefitLastUpdatedFrom Benefit?          @relation("BenefitLastScrapedItem")
+
+  scrapedAt              DateTime          @default(now())
+
+  @@unique([sourceId, externalId])
+  @@index([status])
+  @@index([matchedBenefitId])
+  @@map("scraped_items")
+}

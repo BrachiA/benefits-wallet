@@ -1,0 +1,73 @@
+:root {
+  /* מותג BP: לילך/סגול, אך כאן כמבטא-פעולה בלבד — לא רקע דומיננטי.
+     דשבורד תפעולי צריך קריאות גבוהה מעל הכל. */
+  --bp-lilac: #c9b8f0;
+  --bp-purple: #7f77dd;
+  --bp-purple-dark: #3c3489;
+  --bp-blue-light: #85b7eb;
+  --bp-blue: #378add;
+  --bp-blue-dark: #185fa5;
+
+  /* משטחים: אפור-כחלחל בהיר לרקע העמוד, לבן לכרטיסים — יוצר עומק
+     קל בלי צל דרמטי */
+  --surface-page: #f4f5f9;
+  --surface-card: #ffffff;
+  --surface-sidebar: #1f1b3a;
+  --surface-hover: #f0eefc;
+
+  --text-primary: #1c1b29;
+  --text-secondary: #5c5a6e;
+  --text-muted: #9896a8;
+  --text-on-sidebar: #d8d5ec;
+  --text-on-sidebar-muted: #8b87a8;
+
+  --border: #e4e2ee;
+  --border-strong: #d0cce3;
+
+  /* סטטוסים — האלמנט החוזר (signature) שנותן סריקה מהירה של המסך:
+     ToS, confidence score, פעיל/לא-פעיל — כולם דרך אותה שפת badge */
+  --status-success-bg: #e6f4ea;
+  --status-success-text: #1e7a3d;
+  --status-warning-bg: #fdf0dc;
+  --status-warning-text: #92610f;
+  --status-danger-bg: #fbe7e7;
+  --status-danger-text: #b32424;
+  --status-neutral-bg: #eeecf7;
+  --status-neutral-text: #5c5a6e;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --font-sans: -apple-system, 'Segoe UI', Inter, Roboto, sans-serif;
+  --font-display: Georgia, 'Times New Roman', serif; /* שמור ללוגו/BP branding בלבד */
+
+  --shadow-card: 0 1px 3px rgba(28, 27, 41, 0.06), 0 1px 2px rgba(28, 27, 41, 0.04);
+  --shadow-elevated: 0 4px 16px rgba(28, 27, 41, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+a {
+  color: var(--bp-purple);
+  text-decoration: none;
+}
