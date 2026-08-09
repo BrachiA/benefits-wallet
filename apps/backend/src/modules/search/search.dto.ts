@@ -5,6 +5,13 @@ import { z } from 'zod';
 // חיפוש-על היא top-N לכל סוג ישות, לא רשימה ממוספרת ארוכה.
 export const searchQuerySchema = z.object({
   q: z.string().min(1).max(100),
+  // המועדונים של מי שמחפש. תוצאות ההטבות מסוננות לפיהם, כדי
+  // שהחיפוש לא יציג הטבה שאינה מגיעה למשתמשת. אופציונלי — צרכן
+  // שלא מספק אותו (למשל כלי פנימי) מקבל את כל ההטבות התקפות.
+  programIds: z
+    .union([z.string(), z.array(z.string())])
+    .transform((v) => (Array.isArray(v) ? v : v.split(',')))
+    .optional(),
   entityTypes: z
     .union([z.string(), z.array(z.string())])
     .transform((v) => (Array.isArray(v) ? v : v.split(',')))

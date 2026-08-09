@@ -54,7 +54,7 @@ export const listScraperSourcesQuerySchema = z.object({
 
 export const listScrapedItemsQuerySchema = z.object({
   sourceId: z.string().uuid().optional(),
-  status: z.enum(['AUTO_PUBLISHED', 'PENDING_REVIEW', 'APPROVED', 'REJECTED']).optional(),
+  status: z.enum(['AUTO_PUBLISHED', 'PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SUPERSEDED']).optional(),
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().positive().optional(),
 });

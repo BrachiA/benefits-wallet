@@ -62,6 +62,10 @@ export const listBenefitsQuerySchema = z.object({
   brandId: z.string().uuid().optional(),
   isPopular: z.coerce.boolean().optional(),
   search: z.string().optional(),
+  // תצוגת ניהול בלבד: מחזיר גם הטבות שכובו, שפג תוקפן או שטרם
+  // התחילו, כדי שהדשבורד יוכל לערוך אותן. האפליקציה לא שולחת את
+  // הפרמטר הזה לעולם — ברירת המחדל היא הצד הבטוח.
+  includeInactive: z.coerce.boolean().optional(),
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().positive().optional(),
   sortBy: z.enum(['priority', 'valueScore', 'createdAt']).default('priority'),

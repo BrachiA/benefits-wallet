@@ -12,11 +12,28 @@ export function BenefitsListPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // includeInactive: תצוגת ניהול. בלי זה הדשבורד מקבל את אותה
+    // רשימה מסוננת שהאפליקציה מקבלת, והטבה שפג תוקפה נעלמת מהמסך
+    // בדיוק כשצריך להיכנס אליה כדי להאריך אותה.
     apiClient
-      .getPaginated<Benefit[]>('/benefits?pageSize=50')
+      .getPaginated<Benefit[]>('/benefits?pageSize=50&includeInactive=true')
       .then((res) => setBenefits(res.data))
       .finally(() => setIsLoading(false));
   }, []);
+
+  // מציג למה ההטבה לא גלויה כרגע למשתמשות, כשזה המצב. "כבויה"
+  // ו"פג תוקף" הן סיבות שונות שדורשות פעולה שונה מהמנהלת.
+  function visibilityBadge(b: Benefit) {
+    if (!b.isActive) return statusBadge('isActive', b.isActive);
+    const now = Date.now();
+    if (b.endDate && new Date(b.endDate).getTime() <= now) {
+      return { tone: 'danger' as const, label: 'פג תוקף' };
+    }
+    if (b.startDate && new Date(b.startDate).getTime() > now) {
+      return { tone: 'warning' as const, label: 'טרם התחילה' };
+    }
+    return statusBadge('isActive', b.isActive);
+  }
 
   const columns: Column<Benefit>[] = [
     { header: 'הטבה', render: (b) => <div style={{ fontWeight: 500 }}>{b.title}</div> },
@@ -29,7 +46,7 @@ export function BenefitsListPage() {
     {
       header: 'סטטוס',
       render: (b) => {
-        const { tone, label } = statusBadge('isActive', b.isActive);
+        const { tone, label } = visibilityBadge(b);
         return <Badge tone={tone}>{label}</Badge>;
       },
     },

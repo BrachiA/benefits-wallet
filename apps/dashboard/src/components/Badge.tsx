@@ -41,7 +41,7 @@ export function statusBadge(
 ): { tone: BadgeTone; label: string };
 export function statusBadge(
   kind: 'itemStatus',
-  value: 'AUTO_PUBLISHED' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED'
+  value: 'AUTO_PUBLISHED' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED'
 ): { tone: BadgeTone; label: string };
 export function statusBadge(kind: 'confidence', value: number): { tone: BadgeTone; label: string };
 export function statusBadge(kind: string, value: unknown): { tone: BadgeTone; label: string } {
@@ -62,6 +62,9 @@ export function statusBadge(kind: string, value: unknown): { tone: BadgeTone; la
       PENDING_REVIEW: { tone: 'warning', label: 'ממתין לבדיקה' },
       APPROVED: { tone: 'success', label: 'אושר' },
       REJECTED: { tone: 'danger', label: 'נדחה' },
+      // הפריט נסרק שוב לפני שהספיקו להכריע בו — המופע הזה כבר לא
+      // רלוונטי, וגרסה עדכנית ממנו נמצאת בתור במקומו.
+      SUPERSEDED: { tone: 'neutral', label: 'הוחלף בגרסה חדשה' },
     };
     return map[value as string];
   }

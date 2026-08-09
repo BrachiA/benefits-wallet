@@ -70,14 +70,29 @@ export const scraperRepository = {
   // ---------- ScrapedItem ----------
 
   // המפתח לזיהוי "ראינו כבר": לא לפי טקסט, לפי (sourceId, externalId).
-  async findByExternalId(sourceId: string, externalId: string) {
-    return prisma.scrapedItem.findUnique({
-      where: { sourceId_externalId: { sourceId, externalId } },
+  // מאז שהטבלה היא יומן אירועים יש כמה שורות לאותו מפתח, ולכן
+  // findFirst עם מיון יורד — המופע האחרון הוא זה שמשקף את מצב
+  // הפריט, וכל מה שלפניו הוא היסטוריה.
+  async findLatestByExternalId(sourceId: string, externalId: string) {
+    return prisma.scrapedItem.findFirst({
+      where: { sourceId, externalId },
+      orderBy: { scrapedAt: 'desc' },
     });
   },
 
   async createItem(data: Prisma.ScrapedItemCreateInput) {
     return prisma.scrapedItem.create({ data });
+  },
+
+  // כשפריט נראה שוב בזמן שמופע קודם שלו עדיין ממתין להכרעה,
+  // המופע הישן מסומן SUPERSEDED. הרשומה נשמרת ביומן אך יוצאת
+  // מתור הבדיקה — אחרת סריקה יומית הייתה מוסיפה שורה נוספת לתור
+  // בכל יום שבו המנהל לא הספיק לטפל בפריט.
+  async supersedePendingItems(sourceId: string, externalId: string) {
+    return prisma.scrapedItem.updateMany({
+      where: { sourceId, externalId, status: 'PENDING_REVIEW' },
+      data: { status: 'SUPERSEDED' },
+    });
   },
 
   async findItems(query: ListScrapedItemsQuery, skip: number, take: number) {
@@ -107,11 +122,22 @@ export const scraperRepository = {
 
   async updateItemStatus(
     id: string,
-    data: { status: 'AUTO_PUBLISHED' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED'; reviewedBy?: string }
+    data: {
+      status: 'AUTO_PUBLISHED' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED';
+      reviewedBy?: string;
+      // נקבע כשאישור ידני יוצר הטבה חדשה: בלעדיו הפריט נשאר בלי
+      // קישור להטבה, ומנוע ההתאמה לא מזהה אותו בריצה הבאה ונופל
+      // לחיפוש לפי slug של הכותרת.
+      matchedBenefitId?: string;
+    }
   ) {
     return prisma.scrapedItem.update({
       where: { id },
-      data: { ...data, ...(data.reviewedBy && { reviewedAt: new Date() }) },
+      data: {
+        status: data.status,
+        ...(data.reviewedBy && { reviewedBy: data.reviewedBy, reviewedAt: new Date() }),
+        ...(data.matchedBenefitId && { matchedBenefitId: data.matchedBenefitId }),
+      },
     });
   },
 };

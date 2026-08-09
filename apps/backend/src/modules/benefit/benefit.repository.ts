@@ -1,41 +1,36 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
+import { buildBenefitVisibilityWhere } from './benefitVisibility';
 import type { ListBenefitsQuery } from './benefit.dto';
 
 // שכבת בידוד מ-Prisma: אם אי-פעם יוחלט לעבור ל-Drizzle או ל-raw SQL
 // בשאילתה הזו במיוחד (המועמדת הראשונה, כי היא הכי כבדה במערכת),
 // משנים קובץ זה בלבד.
 
-const activeNotExpiredWhere: Prisma.BenefitWhereInput = {
-  isActive: true,
-  deletedAt: null,
-  OR: [{ endDate: null }, { endDate: { gt: new Date() } }],
-};
-
 export const benefitRepository = {
   // שאילתת ה-Scope-matching: הלב של המערכת. הופכת בחירת מועדונים
-  // של המשתמש לרשימת הטבות תקפות, דרך OR על שורות BenefitScope.
+  // של המשתמש לרשימת הטבות תקפות. תנאי הנראות עצמו חי ב-
+  // benefitVisibility.ts ומשותף לכל הצרכנים.
   async findMatchingBenefits(query: ListBenefitsQuery, skip: number, take: number) {
     const where: Prisma.BenefitWhereInput = {
-      ...activeNotExpiredWhere,
-      ...(query.categoryId && { categoryId: query.categoryId }),
-      ...(query.isPopular !== undefined && { isPopular: query.isPopular }),
-      ...(query.search && {
-        OR: [
-          { title: { contains: query.search, mode: 'insensitive' } },
-          { shortDescription: { contains: query.search, mode: 'insensitive' } },
-        ],
-      }),
-      ...((query.programIds?.length || query.brandId) && {
-        scopes: {
-          some: {
-            ...(query.programIds?.length && {
-              OR: [{ programId: { in: query.programIds } }, { programId: null }],
-            }),
-            ...(query.brandId && { brandId: query.brandId }),
-          },
-        },
-      }),
+      AND: [
+        buildBenefitVisibilityWhere({
+          audience: { programIds: query.programIds, brandId: query.brandId },
+          includeInactive: query.includeInactive,
+        }),
+        ...(query.categoryId ? [{ categoryId: query.categoryId }] : []),
+        ...(query.isPopular !== undefined ? [{ isPopular: query.isPopular }] : []),
+        ...(query.search
+          ? [
+              {
+                OR: [
+                  { title: { contains: query.search, mode: 'insensitive' as const } },
+                  { shortDescription: { contains: query.search, mode: 'insensitive' as const } },
+                ],
+              },
+            ]
+          : []),
+      ],
     };
 
     const orderBy: Prisma.BenefitOrderByWithRelationInput =

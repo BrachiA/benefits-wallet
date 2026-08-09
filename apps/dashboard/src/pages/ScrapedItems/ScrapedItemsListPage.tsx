@@ -12,6 +12,9 @@ const statusFilterOptions = [
   { value: 'AUTO_PUBLISHED', label: 'פורסמו אוטומטית' },
   { value: 'APPROVED', label: 'אושרו ידנית' },
   { value: 'REJECTED', label: 'נדחו' },
+  // מופעים ישנים של פריט שנסרק שוב לפני שהוכרע. מחוץ לתור, אבל
+  // נגישים — הם חלק מהיומן ולפעמים צריך לראות מה השתנה מאז.
+  { value: 'SUPERSEDED', label: 'הוחלפו בגרסה חדשה' },
 ];
 
 export function ScrapedItemsListPage() {

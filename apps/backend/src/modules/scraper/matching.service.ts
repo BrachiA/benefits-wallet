@@ -18,9 +18,10 @@ export type MatchResult =
 
 export const matchingService = {
   // שלב 1: בדיקת "ראינו כבר את הפריט הזה בריצה קודמת" — לפי המפתח
-  // היציב (sourceId, externalId), לא לפי טקסט.
+  // היציב (sourceId, externalId), לא לפי טקסט. הטבלה היא יומן, ולכן
+  // מה שמעניין הוא המופע האחרון ולא "הרשומה" (אין כזו יחידה).
   async findPreviousItem(sourceId: string, externalId: string) {
-    return scraperRepository.findByExternalId(sourceId, externalId);
+    return scraperRepository.findLatestByExternalId(sourceId, externalId);
   },
 
   // שלב 2: אם הפריט חדש (לא נראה קודם) או שכבר ראינו אותו אבל בלי

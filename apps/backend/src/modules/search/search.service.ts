@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma';
+import { buildBenefitVisibilityWhere, type BenefitAudience } from '../benefit/benefitVisibility';
 import type { SearchQuery } from './search.dto';
 
 const ALL_TYPES = ['benefit', 'brand', 'program', 'category', 'store'] as const;
@@ -12,11 +13,15 @@ export const searchService = {
   async searchAll(query: SearchQuery) {
     const types = (query.entityTypes ?? ALL_TYPES) as EntityType[];
     const take = query.limitPerType;
+    // תוצאות ההטבות מסוננות לפי הזכאות של מי שמחפש, כמו בכל מסך
+    // אחר באפליקציה. בלי זה החיפוש היה החור היחיד שדרכו הטבה
+    // שאינה מגיעה למשתמשת הופיעה לה בכל זאת.
+    const audience: BenefitAudience = { programIds: query.programIds };
 
     // כל סוג ישות נשלף במקביל, לא ברצף — חיפוש-על לא אמור להיות
     // איטי פי 5 מחיפוש בודד.
     const [benefits, brands, programs, categories, stores] = await Promise.all([
-      types.includes('benefit') ? this.searchBenefits(query.q, take) : [],
+      types.includes('benefit') ? this.searchBenefits(query.q, take, audience) : [],
       types.includes('brand') ? this.searchBrands(query.q, take) : [],
       types.includes('program') ? this.searchPrograms(query.q, take) : [],
       types.includes('category') ? this.searchCategories(query.q, take) : [],
@@ -26,16 +31,22 @@ export const searchService = {
     return { benefits, brands, programs, categories, stores };
   },
 
-  // שם הטבה + תגיות (שלב 8: "תגיות" ו"מילות מפתח")
-  async searchBenefits(q: string, take: number) {
+  // שם הטבה + תגיות (שלב 8: "תגיות" ו"מילות מפתח").
+  // תנאי הנראות מגיע מ-benefitVisibility ולא נבנה כאן — הגרסה
+  // הקודמת בדקה isActive/deletedAt בלבד ולכן החזירה גם הטבות
+  // שפג תוקפן.
+  async searchBenefits(q: string, take: number, audience?: BenefitAudience) {
     return prisma.benefit.findMany({
       where: {
-        isActive: true,
-        deletedAt: null,
-        OR: [
-          { title: { contains: q, mode: 'insensitive' } },
-          { shortDescription: { contains: q, mode: 'insensitive' } },
-          { tags: { some: { tag: { name: { contains: q, mode: 'insensitive' } } } } },
+        AND: [
+          buildBenefitVisibilityWhere({ audience }),
+          {
+            OR: [
+              { title: { contains: q, mode: 'insensitive' } },
+              { shortDescription: { contains: q, mode: 'insensitive' } },
+              { tags: { some: { tag: { name: { contains: q, mode: 'insensitive' } } } } },
+            ],
+          },
         ],
       },
       take,

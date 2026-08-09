@@ -14,6 +14,6 @@ export type ScrapedItem = {
   matchedBenefit?: { id: string; title: string };
   confidenceScore: number;
   confidenceReasons: string[];
-  status: 'AUTO_PUBLISHED' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+  status: 'AUTO_PUBLISHED' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED';
   scrapedAt: string;
 };

@@ -1,14 +1,9 @@
 import { prisma } from '../../lib/prisma';
 import { Prisma } from '@prisma/client';
+import { buildBenefitVisibilityWhere } from '../benefit/benefitVisibility';
 import { GROUP_DISPLAY_ORDER, GROUP_LABELS, isNewBenefit, resolveBenefitGroup, sortWithinGroup } from './benefitGroup';
 import type { GroupedRecommendationsQuery } from './recommendation.dto';
 import type { BenefitGroupKey } from './benefitGroup';
-
-const activeNotExpiredWhere: Prisma.BenefitWhereInput = {
-  isActive: true,
-  deletedAt: null,
-  OR: [{ endDate: null }, { endDate: { gt: new Date() } }],
-};
 
 export const recommendationService = {
   // מחזיר תצוגה מוכנה-לרינדור: מערך קבוצות בסדר התצוגה הקבוע,
@@ -23,18 +18,12 @@ export const recommendationService = {
     }
 
     const where: Prisma.BenefitWhereInput = {
-      ...activeNotExpiredWhere,
-      ...(query.categoryId && { categoryId: query.categoryId }),
-      ...((query.brandId || query.programIds?.length) && {
-        scopes: {
-          some: {
-            ...(query.brandId && { brandId: query.brandId }),
-            ...(query.programIds?.length && {
-              OR: [{ programId: { in: query.programIds } }, { programId: null }],
-            }),
-          },
-        },
-      }),
+      AND: [
+        buildBenefitVisibilityWhere({
+          audience: { programIds: query.programIds, brandId: query.brandId },
+        }),
+        ...(query.categoryId ? [{ categoryId: query.categoryId }] : []),
+      ],
     };
 
     const benefits = await prisma.benefit.findMany({

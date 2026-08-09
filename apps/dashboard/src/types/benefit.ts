@@ -25,6 +25,10 @@ export type Benefit = {
   isPopular: boolean;
   isFeatured: boolean;
   priority: number;
+  // ISO. נדרשים כדי להסביר במסך הניהול *למה* הטבה אינה גלויה
+  // כרגע — "פג תוקף" ו"טרם התחילה" הן סיבות שונות מ"כבויה".
+  startDate?: string;
+  endDate?: string;
   scopes: BenefitScope[];
 };
 

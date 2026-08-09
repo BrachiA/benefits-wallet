@@ -243,6 +243,11 @@ export const scraperService = {
     const confidence = confidenceService.calculate(matchResult, fields, previousValue);
     const autoPublish = confidenceService.shouldAutoPublish(confidence, matchResult);
 
+    // מופעים קודמים של אותו פריט שעדיין ממתינים להכרעה כבר לא
+    // רלוונטיים — המופע שנוצר עכשיו מחליף אותם. בלי זה, סריקה
+    // יומית של פריט שלא טופל הייתה מוסיפה שורה לתור בכל יום.
+    await scraperRepository.supersedePendingItems(sourceId, fields.externalId);
+
     const item = await scraperRepository.createItem({
       source: { connect: { id: sourceId } },
       run: { connect: { id: runId } },
@@ -418,7 +423,16 @@ export const scraperService = {
           lastScrapedItem: { connect: { id: item.id } },
         },
       });
-      await scraperRepository.updateItemStatus(id, { status: 'APPROVED', reviewedBy: input.reviewedBy });
+      // matchedBenefitId — ולא רק lastScrapedItemId על ההטבה. אלה
+      // שני relations נפרדים, ומנוע ההתאמה בודק דווקא את זה: בלעדיו
+      // הפריט נשאר "לא מקושר" לנצח, הזיהוי לפי externalId לא תופס,
+      // והמנוע נופל לחיפוש לפי slug של הכותרת — כך ששינוי קטן
+      // בכותרת באתר המקור יוצר הטבה כפולה.
+      await scraperRepository.updateItemStatus(id, {
+        status: 'APPROVED',
+        reviewedBy: input.reviewedBy,
+        matchedBenefitId: created.id,
+      });
       return created;
     }
 
