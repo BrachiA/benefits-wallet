@@ -83,7 +83,11 @@ export const benefitRepository = {
     return prisma.benefit.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
   },
 
-  async replaceScopes(benefitId: string, scopes: Prisma.BenefitScopeCreateManyInput[]) {
+  // scopes בלי benefitId בכוונה: הוא מתווסף כאן, לא נדרש מהקורא —
+  // אותה צורה בדיוק שה-DTO מייצר (Omit<..., 'benefitId'>[]), כדי
+  // שהחתימה תשקף מה שהפונקציה באמת צריכה ולא את טיפוס ה-Prisma
+  // המלא שדורש שדה שהיא ממילא דורסת.
+  async replaceScopes(benefitId: string, scopes: Omit<Prisma.BenefitScopeCreateManyInput, 'benefitId'>[]) {
     return prisma.$transaction([
       prisma.benefitScope.deleteMany({ where: { benefitId } }),
       prisma.benefitScope.createMany({

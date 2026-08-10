@@ -3,7 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { apiClient, formatSaveError } from '../../api/client';
 import { PageHeader, Field, Input, Select, Button } from '../../components/forms/FormPrimitives';
 import { Badge, statusBadge } from '../../components/Badge';
-import { sourceTypeLabels, type ScraperRunResult, type ScraperSource } from '../../types/scraperSource';
+import { sourceTypeLabels, type ScrapeConfig, type ScraperRunResult, type ScraperSource } from '../../types/scraperSource';
+
+type Program = { id: string; name: string };
+type Brand = { id: string; name: string };
+type Category = { id: string; name: string };
 
 const fieldLabels: Record<string, string> = {
   slug: 'מזהה URL (slug)',
@@ -11,11 +15,22 @@ const fieldLabels: Record<string, string> = {
   baseUrl: 'כתובת בסיס',
   sourceType: 'סוג מקור',
   renderMode: 'אופן טעינת הדף',
+  scrapeConfig: 'הגדרות סריקה',
+  defaultProgramId: 'מועדון ברירת מחדל',
+  defaultBrandId: 'מותג ברירת מחדל',
+  defaultCategoryId: 'קטגוריית ברירת מחדל',
 };
 
 const tosFieldLabels: Record<string, string> = {
   reviewedBy: 'שמך',
   notes: 'הערות',
+};
+
+const emptyScrapeConfig: ScrapeConfig = {
+  listSelector: '',
+  paginationParam: '',
+  maxPages: 1,
+  fields: { title: '', shortDescription: '', discountValue: '', imageUrl: '', externalId: '', detailUrl: '' },
 };
 
 const emptyForm = {
@@ -24,7 +39,25 @@ const emptyForm = {
   sourceType: 'BRAND_SITE' as ScraperSource['sourceType'],
   baseUrl: '',
   renderMode: 'HTTP' as ScraperSource['renderMode'],
+  defaultProgramId: '',
+  defaultBrandId: '',
+  defaultCategoryId: '',
 };
+
+// ממיר undefined/מחרוזת ריקה ל-undefined כדי שהשרת לא ידחה שדה
+// אופציונלי ריק בתור מחרוזת לא-תקינה, ומסנן maxPages/paginationParam
+// ריקים החוצה מ-scrapeConfig לפני שליחה.
+function cleanScrapeConfig(config: ScrapeConfig): ScrapeConfig {
+  const fields = Object.fromEntries(
+    Object.entries(config.fields).filter(([, v]) => v && v.trim() !== '')
+  ) as ScrapeConfig['fields'];
+  return {
+    listSelector: config.listSelector.trim(),
+    ...(config.paginationParam?.trim() && { paginationParam: config.paginationParam.trim() }),
+    maxPages: config.maxPages && config.maxPages > 0 ? config.maxPages : 1,
+    fields,
+  };
+}
 
 export function ScraperSourceFormPage() {
   const { id } = useParams();
@@ -33,6 +66,10 @@ export function ScraperSourceFormPage() {
 
   const [source, setSource] = useState<ScraperSource | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [scrapeConfig, setScrapeConfig] = useState<ScrapeConfig>(emptyScrapeConfig);
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isActing, setIsActing] = useState(false); // מצב נפרד לפעולות (activate/run) לעומת שמירת טופס
   const [error, setError] = useState<string | null>(null);
@@ -43,11 +80,39 @@ export function ScraperSourceFormPage() {
   const [tosNotes, setTosNotes] = useState('');
   const [reviewerName, setReviewerName] = useState('');
 
+  useEffect(() => {
+    apiClient.getPaginated<Program[]>('/programs?pageSize=200').then((r) => setPrograms(r.data));
+    apiClient.getPaginated<Brand[]>('/brands?pageSize=200').then((r) => setBrands(r.data));
+    apiClient.getPaginated<Category[]>('/categories?pageSize=200').then((r) => setCategories(r.data));
+  }, []);
+
   function loadSource() {
     if (!isEditMode) return;
     apiClient.get<ScraperSource>(`/scraper/sources/${id}`).then((s) => {
       setSource(s);
-      setForm({ slug: s.slug, name: s.name, sourceType: s.sourceType, baseUrl: s.baseUrl, renderMode: s.renderMode });
+      setForm({
+        slug: s.slug,
+        name: s.name,
+        sourceType: s.sourceType,
+        baseUrl: s.baseUrl,
+        renderMode: s.renderMode,
+        defaultProgramId: s.defaultProgramId ?? '',
+        defaultBrandId: s.defaultBrandId ?? '',
+        defaultCategoryId: s.defaultCategoryId ?? '',
+      });
+      setScrapeConfig({
+        listSelector: s.scrapeConfig?.listSelector ?? '',
+        paginationParam: s.scrapeConfig?.paginationParam ?? '',
+        maxPages: s.scrapeConfig?.maxPages ?? 1,
+        fields: {
+          title: s.scrapeConfig?.fields?.title ?? '',
+          shortDescription: s.scrapeConfig?.fields?.shortDescription ?? '',
+          discountValue: s.scrapeConfig?.fields?.discountValue ?? '',
+          imageUrl: s.scrapeConfig?.fields?.imageUrl ?? '',
+          externalId: s.scrapeConfig?.fields?.externalId ?? '',
+          detailUrl: s.scrapeConfig?.fields?.detailUrl ?? '',
+        },
+      });
     });
   }
 
@@ -57,22 +122,15 @@ export function ScraperSourceFormPage() {
     setError(null);
     setIsSaving(true);
     try {
-      // scrapeConfig לא נכלל בטופס הזה במכוון: זה קונפיג טכני
-      // (selectors, מיפוי שדות) שדורש ידע במבנה ה-HTML של האתר —
-      // לא משהו שמנהלת עסקית ממלאת ידנית. יוזן בנפרד/בקובץ JSON
-      // בשלב ההטמעה בפועל של כל מקור. הערכים כאן הם placeholder
-      // תקין-לוולידציה בלבד (השרת דורש listSelector/title/externalId
-      // לא-ריקים) — חובה לעדכן אותם בפועל לפני שהמקור יופעל.
-      if (isEditMode) await apiClient.patch(`/scraper/sources/${id}`, form);
-      else {
-        await apiClient.post('/scraper/sources', {
-          ...form,
-          scrapeConfig: {
-            listSelector: 'TODO: CSS selector לכרטיס הטבה בדף',
-            fields: { title: 'TODO: selector לכותרת', externalId: 'TODO: selector/attribute למזהה ייחודי' },
-          },
-        });
-      }
+      const payload = {
+        ...form,
+        defaultProgramId: form.defaultProgramId || undefined,
+        defaultBrandId: form.defaultBrandId || undefined,
+        defaultCategoryId: form.defaultCategoryId || undefined,
+        scrapeConfig: cleanScrapeConfig(scrapeConfig),
+      };
+      if (isEditMode) await apiClient.patch(`/scraper/sources/${id}`, payload);
+      else await apiClient.post('/scraper/sources', payload);
       navigate('/scraper-sources');
     } catch (err) {
       setError(formatSaveError(err, fieldLabels));
@@ -137,8 +195,10 @@ export function ScraperSourceFormPage() {
     }
   }
 
+  const hasAutoScopeAnchor = Boolean((form.defaultProgramId || form.defaultBrandId) && form.defaultCategoryId);
+
   return (
-    <div style={{ maxWidth: 560 }}>
+    <div style={{ maxWidth: 620 }}>
       <PageHeader title={isEditMode ? 'עריכת מקור סריקה' : 'מקור סריקה חדש'} />
 
       <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, marginBottom: 16 }}>
@@ -166,15 +226,150 @@ export function ScraperSourceFormPage() {
             <option value="HEADLESS_BROWSER">דורש דפדפן (אתר עם JavaScript כבד)</option>
           </Select>
         </Field>
+      </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-          <Button onClick={handleSubmit} disabled={isSaving}>
-            {isSaving ? 'שומר...' : 'שמור מקור'}
-          </Button>
-          <Button variant="secondary" onClick={() => navigate('/scraper-sources')} type="button">
-            ביטול
-          </Button>
+      {/* אזור נפרד: איך לזהות הטבות בדף. שדות טכניים (CSS selectors) —
+          מיועד למי שמכינה את המקור מול קוד המקור (HTML) של האתר. */}
+      <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, marginBottom: 16 }}>
+        <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 4 }}>איך לזהות הטבות בדף</div>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 0, marginBottom: 16 }}>
+          שדות טכניים (CSS selectors) — נדרשת הכרות עם קוד המקור (HTML) של האתר הנסרק. בלי
+          "בורר הכרטיס" ו"שדה כותרת" תקינים, המקור ירוץ בלי לייצר שום פריט.
+        </p>
+
+        <Field label="בורר הכרטיס (listSelector)" hint='ה-selector שתופס כל "כרטיס הטבה" בודד בדף, למשל .benefit-card'>
+          <Input
+            value={scrapeConfig.listSelector}
+            onChange={(e) => setScrapeConfig({ ...scrapeConfig, listSelector: e.target.value })}
+            placeholder=".benefit-card"
+          />
+        </Field>
+        <Field label="שדה כותרת" hint="selector יחסי לכרטיס, לטקסט הכותרת">
+          <Input
+            value={scrapeConfig.fields.title}
+            onChange={(e) => setScrapeConfig({ ...scrapeConfig, fields: { ...scrapeConfig.fields, title: e.target.value } })}
+            placeholder=".title"
+          />
+        </Field>
+        <Field label="שדה מזהה ייחודי (externalId)" hint='מזהה יציב לכל פריט — לרוב תכונה, כמו @data-id, לא טקסט חופשי'>
+          <Input
+            value={scrapeConfig.fields.externalId}
+            onChange={(e) => setScrapeConfig({ ...scrapeConfig, fields: { ...scrapeConfig.fields, externalId: e.target.value } })}
+            placeholder="@data-id"
+          />
+        </Field>
+        <Field label="שדה תיאור קצר (לא חובה)">
+          <Input
+            value={scrapeConfig.fields.shortDescription}
+            onChange={(e) =>
+              setScrapeConfig({ ...scrapeConfig, fields: { ...scrapeConfig.fields, shortDescription: e.target.value } })
+            }
+            placeholder=".desc"
+          />
+        </Field>
+        <Field label="שדה ערך הנחה (לא חובה)" hint="הטקסט יומר אוטומטית למספר, למשל '15% הנחה' -> 15">
+          <Input
+            value={scrapeConfig.fields.discountValue}
+            onChange={(e) =>
+              setScrapeConfig({ ...scrapeConfig, fields: { ...scrapeConfig.fields, discountValue: e.target.value } })
+            }
+            placeholder=".discount"
+          />
+        </Field>
+        <Field label="שדה תמונה (לא חובה)">
+          <Input
+            value={scrapeConfig.fields.imageUrl}
+            onChange={(e) => setScrapeConfig({ ...scrapeConfig, fields: { ...scrapeConfig.fields, imageUrl: e.target.value } })}
+            placeholder="img::attr(src)"
+          />
+        </Field>
+        <Field label="שדה קישור לפרטים (לא חובה)">
+          <Input
+            value={scrapeConfig.fields.detailUrl}
+            onChange={(e) => setScrapeConfig({ ...scrapeConfig, fields: { ...scrapeConfig.fields, detailUrl: e.target.value } })}
+            placeholder="a::attr(href)"
+          />
+        </Field>
+        <Field label="פרמטר דפדוף (לא חובה)" hint="שם פרמטר ה-URL שמקדם עמוד, למשל page">
+          <Input
+            value={scrapeConfig.paginationParam}
+            onChange={(e) => setScrapeConfig({ ...scrapeConfig, paginationParam: e.target.value })}
+            placeholder="page"
+          />
+        </Field>
+        <Field label="מספר עמודים מקסימלי">
+          <Input
+            type="number"
+            min={1}
+            value={scrapeConfig.maxPages}
+            onChange={(e) => setScrapeConfig({ ...scrapeConfig, maxPages: Number(e.target.value) || 1 })}
+          />
+        </Field>
+      </div>
+
+      {/* עוגן השיוך האוטומטי: כשמוגדר (מועדון/מותג + קטגוריה), הטבה
+          חדשה שעוברת את סף הביטחון מתפרסמת לגמרי לבד. בלעדיו, כל
+          הטבה חדשה ממקור זה תמיד עוברת דרך תור הבדיקה. */}
+      <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, marginBottom: 16 }}>
+        <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 4 }}>שיוך אוטומטי להטבות חדשות</div>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 0, marginBottom: 16 }}>
+          כשיש כאן מועדון או מותג, וגם קטגוריה — הטבה חדשה שהמערכת בטוחה בה מספיק תתפרסם ותשויך
+          אוטומטית, בלי לחכות לאישור ידני. בלעדיהם, כל הטבה חדשה תמיד תעבור דרך תור הבדיקה.
+        </p>
+
+        <Field label="מועדון ברירת מחדל (לא חובה)">
+          <Select value={form.defaultProgramId} onChange={(e) => setForm({ ...form, defaultProgramId: e.target.value })}>
+            <option value="">— ללא —</option>
+            {programs.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="מותג ברירת מחדל (לא חובה)">
+          <Select value={form.defaultBrandId} onChange={(e) => setForm({ ...form, defaultBrandId: e.target.value })}>
+            <option value="">— ללא —</option>
+            {brands.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="קטגוריית ברירת מחדל (לא חובה)">
+          <Select value={form.defaultCategoryId} onChange={(e) => setForm({ ...form, defaultCategoryId: e.target.value })}>
+            <option value="">— ללא —</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        <div
+          style={{
+            fontSize: 13,
+            padding: 10,
+            borderRadius: 'var(--radius-sm)',
+            background: hasAutoScopeAnchor ? 'var(--status-success-bg)' : 'var(--status-warning-bg)',
+            color: hasAutoScopeAnchor ? 'var(--status-success-text)' : 'var(--status-warning-text)',
+          }}
+        >
+          {hasAutoScopeAnchor
+            ? 'שיוך אוטומטי פעיל למקור הזה.'
+            : 'אין שיוך אוטומטי — כל הטבה חדשה תעבור דרך תור הבדיקה, גם אם המערכת בטוחה בה.'}
         </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <Button onClick={handleSubmit} disabled={isSaving}>
+          {isSaving ? 'שומרת...' : 'שמור מקור'}
+        </Button>
+        <Button variant="secondary" onClick={() => navigate('/scraper-sources')} type="button">
+          ביטול
+        </Button>
       </div>
 
       {isEditMode && source && (

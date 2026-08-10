@@ -18,9 +18,13 @@ function fields(overrides: Partial<RawScrapedFields> = {}): RawScrapedFields {
 // בדיוק כפי ש-runSource עושה. מוחזרות התוצאות של כל פריט.
 async function scrapeRun(sourceId: string, items: RawScrapedFields[]) {
   const run = await createRun(sourceId);
+  // processScrapedItem מקבל את המקור במלואו (לא רק את ה-id), כי
+  // הוא צריך לקרוא ממנו את עוגן השיוך האוטומטי. הבדיקות שקוראות
+  // ל-scrapeRun עדיין מעבירות רק sourceId, ולכן שולפים כאן.
+  const source = await prisma.scraperSource.findUniqueOrThrow({ where: { id: sourceId } });
   const outcomes: string[] = [];
   for (const item of items) {
-    outcomes.push(await scraperService.processScrapedItem(sourceId, run.id, item));
+    outcomes.push(await scraperService.processScrapedItem(source, run.id, item));
   }
   return outcomes;
 }
@@ -167,8 +171,12 @@ describe('processScrapedItem — סיווג התוצאה', () => {
     }
   });
 
-  it('הטבה חדשה לעולם אינה מתפרסמת אוטומטית, גם כשכל השדות מלאים', async () => {
-    // כלל עסקי מפורש: אין "אוטומטי" להטבה שמעולם לא הייתה במערכת.
+  it('הטבה חדשה ממקור בלי עוגן שיוך אינה מתפרסמת אוטומטית, גם כשכל השדות מלאים', async () => {
+    // מאז שלב 5 (א.2), הטבה חדשה *יכולה* להתפרסם אוטומטית — אבל
+    // רק אם למקור יש עוגן שיוך תקין (defaultProgramId/defaultBrandId
+    // + defaultCategoryId). ראו tests/scraper/autoScope.test.ts
+    // למסלול שבו יש עוגן. כאן הבדיקה היא שהיעדר עוגן חוסם תמיד,
+    // בלי קשר לאיכות הפריט עצמו.
     const source = await createScraperSource();
 
     const outcomes = await scrapeRun(source.id, [fields()]);

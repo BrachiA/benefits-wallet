@@ -1,5 +1,6 @@
 import { AppError } from '../../lib/AppError';
 import { cache } from '../../lib/cache';
+import { recordAudit } from '../../lib/auditLog';
 import { categoryRepository } from './category.repository';
 import type { CreateCategoryInput, ListCategoriesQuery, UpdateCategoryInput } from './category.dto';
 
@@ -26,6 +27,7 @@ export const categoryService = {
       ...(parentId && { parent: { connect: { id: parentId } } }),
     });
     await cache.del(CACHE_KEY);
+    await recordAudit({ entityType: 'Category', entityId: category.id, action: 'CREATE', changedFields: input });
     return category;
   },
 
@@ -47,6 +49,7 @@ export const categoryService = {
       }),
     });
     await cache.del(CACHE_KEY);
+    await recordAudit({ entityType: 'Category', entityId: id, action: 'UPDATE', changedFields: input });
     return category;
   },
 
@@ -54,6 +57,7 @@ export const categoryService = {
     await this.getById(id);
     const result = await categoryRepository.softDelete(id);
     await cache.del(CACHE_KEY);
+    await recordAudit({ entityType: 'Category', entityId: id, action: 'DELETE' });
     return result;
   },
 

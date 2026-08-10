@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/layout/Layout';
+import { apiClient } from './api/client';
+import { LoginPage } from './pages/Login/LoginPage';
 
 import { IssuersListPage } from './pages/Issuers/IssuersListPage';
 import { IssuerFormPage } from './pages/Issuers/IssuerFormPage';
@@ -24,13 +27,42 @@ import { ScraperSourceFormPage } from './pages/ScraperSources/ScraperSourceFormP
 import { ScrapedItemsListPage } from './pages/ScrapedItems/ScrapedItemsListPage';
 import { ScrapedItemReviewPage } from './pages/ScrapedItems/ScrapedItemReviewPage';
 
+type AuthState = 'loading' | 'authenticated' | 'anonymous';
+
 // כל ישות: /entity (רשימה) + /entity/:id (עריכה, "new" ליצירה).
 // ScrapedItem הוא היוצא מן הכלל היחיד — אין לו מסך יצירה ידני,
 // כי הוא נוצר רק דרך הסורק, לכן /scraped-items/:id הוא Review בלבד.
+//
+// שער כניסה (שלב 5, א.3): נבדק פעם אחת בטעינה מול GET /auth/me.
+// כשלא מחוברת, מוצג LoginPage בלי תלות בנתיב שביקשו — אין מסלול
+// /login נפרד, כי אין שום דבר שמותר לראות לפני התחברות. גם 401
+// שמגיע באמצע עבודה (session שפג) עובר דרך client.ts שמרענן את
+// הדף ומחזיר לכאן מלכתחילה.
 export function App() {
+  const [authState, setAuthState] = useState<AuthState>('loading');
+
+  useEffect(() => {
+    apiClient
+      .get<{ authenticated: boolean }>('/auth/me')
+      .then((data) => setAuthState(data.authenticated ? 'authenticated' : 'anonymous'))
+      .catch(() => setAuthState('anonymous'));
+  }, []);
+
+  if (authState === 'loading') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+        טוען...
+      </div>
+    );
+  }
+
+  if (authState === 'anonymous') {
+    return <LoginPage onSuccess={() => setAuthState('authenticated')} />;
+  }
+
   return (
     <BrowserRouter>
-      <Layout>
+      <Layout onLogout={() => setAuthState('anonymous')}>
         <Routes>
           <Route path="/" element={<Navigate to="/benefits" replace />} />
 

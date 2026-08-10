@@ -97,7 +97,17 @@ export async function createBenefit(overrides: BenefitOverrides = {}) {
 }
 
 export async function createScraperSource(
-  overrides: { slug?: string; tosStatus?: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED'; isActive?: boolean } = {}
+  overrides: {
+    slug?: string;
+    tosStatus?: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+    isActive?: boolean;
+    // עוגן השיוך האוטומטי (שלב 5, א.2). ברירת המחדל היא ללא עוגן,
+    // כי רוב מקרי הבדיקה עוסקים בהתנהגות "בלי אנשור" — הבדיקות
+    // הספציפיות לפרסום אוטומטי מספקות אותו במפורש.
+    defaultProgramId?: string;
+    defaultBrandId?: string;
+    defaultCategoryId?: string;
+  } = {}
 ) {
   const slug = overrides.slug ?? uniq('source');
   return prisma.scraperSource.create({
@@ -115,6 +125,9 @@ export async function createScraperSource(
       // הבדיקה עוסקים במה שקורה *אחרי* שמותר להריץ.
       tosStatus: overrides.tosStatus ?? 'APPROVED',
       isActive: overrides.isActive ?? true,
+      defaultProgramId: overrides.defaultProgramId,
+      defaultBrandId: overrides.defaultBrandId,
+      defaultCategoryId: overrides.defaultCategoryId,
     },
   });
 }

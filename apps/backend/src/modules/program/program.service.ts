@@ -1,5 +1,6 @@
 import { AppError } from '../../lib/AppError';
 import { cache } from '../../lib/cache';
+import { recordAudit } from '../../lib/auditLog';
 import { programRepository } from './program.repository';
 import type { CreateProgramInput, ListProgramsQuery, UpdateProgramInput } from './program.dto';
 
@@ -29,6 +30,7 @@ export const programService = {
       ...(parentProgramId && { parentProgram: { connect: { id: parentProgramId } } }),
     } as never);
     await cache.del(`${CACHE_KEY_PREFIX}all`);
+    await recordAudit({ entityType: 'Program', entityId: program.id, action: 'CREATE', changedFields: input });
     return program;
   },
 
@@ -55,6 +57,7 @@ export const programService = {
       }),
     } as never);
     await cache.del(`${CACHE_KEY_PREFIX}all`);
+    await recordAudit({ entityType: 'Program', entityId: id, action: 'UPDATE', changedFields: input });
     return program;
   },
 
@@ -62,6 +65,7 @@ export const programService = {
     await this.getById(id);
     const result = await programRepository.softDelete(id);
     await cache.del(`${CACHE_KEY_PREFIX}all`);
+    await recordAudit({ entityType: 'Program', entityId: id, action: 'DELETE' });
     return result;
   },
 

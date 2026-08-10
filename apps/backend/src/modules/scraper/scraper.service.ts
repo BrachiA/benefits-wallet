@@ -4,11 +4,14 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { AppError } from '../../lib/AppError';
 import { logger } from '../../lib/logger';
+import { recordAudit } from '../../lib/auditLog';
 import { benefitService } from '../benefit/benefit.service';
 import { scraperRepository } from './scraper.repository';
 import { robotsChecker } from './robotsChecker';
 import { matchingService, type RawScrapedFields } from './matching.service';
 import { confidenceService } from './confidence.service';
+import { buildAutoScopeRow, hasAutoScopeAnchor, type ScraperSourceAnchor } from './scraperAutoScope';
+import { scraperAlerts } from './scraperAlerts';
 import type {
   CreateScraperSourceInput,
   ListScraperSourcesQuery,
@@ -89,22 +92,25 @@ export const scraperService = {
   },
 
   async createSource(input: CreateScraperSourceInput) {
-    const { defaultProgramId, defaultBrandId, ...rest } = input;
+    const { defaultProgramId, defaultBrandId, defaultCategoryId, ...rest } = input;
     // מקור חדש נוצר תמיד לא-פעיל ו-PENDING_REVIEW — אין דרך לעקוף
     // את זה דרך ה-DTO, כי isActive/tosStatus לא נכללים בו כלל.
-    return scraperRepository.createSource({
+    const source = await scraperRepository.createSource({
       ...rest,
       isActive: false,
       tosStatus: 'PENDING_REVIEW',
       ...(defaultProgramId && { defaultProgram: { connect: { id: defaultProgramId } } }),
       ...(defaultBrandId && { defaultBrand: { connect: { id: defaultBrandId } } }),
+      ...(defaultCategoryId && { defaultCategory: { connect: { id: defaultCategoryId } } }),
     } as never);
+    await recordAudit({ entityType: 'ScraperSource', entityId: source.id, action: 'CREATE', changedFields: input });
+    return source;
   },
 
   async updateSource(id: string, input: UpdateScraperSourceInput) {
     await this.getSourceById(id);
-    const { defaultProgramId, defaultBrandId, ...rest } = input;
-    return scraperRepository.updateSource(id, {
+    const { defaultProgramId, defaultBrandId, defaultCategoryId, ...rest } = input;
+    const source = await scraperRepository.updateSource(id, {
       ...rest,
       ...(defaultProgramId !== undefined && {
         defaultProgram: defaultProgramId ? { connect: { id: defaultProgramId } } : { disconnect: true },
@@ -112,12 +118,19 @@ export const scraperService = {
       ...(defaultBrandId !== undefined && {
         defaultBrand: defaultBrandId ? { connect: { id: defaultBrandId } } : { disconnect: true },
       }),
+      ...(defaultCategoryId !== undefined && {
+        defaultCategory: defaultCategoryId ? { connect: { id: defaultCategoryId } } : { disconnect: true },
+      }),
     } as never);
+    await recordAudit({ entityType: 'ScraperSource', entityId: id, action: 'UPDATE', changedFields: input });
+    return source;
   },
 
   async removeSource(id: string) {
     await this.getSourceById(id);
-    return scraperRepository.softDeleteSource(id);
+    const result = await scraperRepository.softDeleteSource(id);
+    await recordAudit({ entityType: 'ScraperSource', entityId: id, action: 'DELETE' });
+    return result;
   },
 
   // הפעולה היחידה שיכולה להעביר tosStatus ל-APPROVED. נפרדת
@@ -126,7 +139,7 @@ export const scraperService = {
   async reviewTos(id: string, input: ReviewTosInput) {
     await this.getSourceById(id);
     logger.info({ sourceId: id, status: input.status, reviewedBy: input.reviewedBy }, 'ToS review recorded');
-    return scraperRepository.updateSource(id, {
+    const source = await scraperRepository.updateSource(id, {
       tosStatus: input.status,
       tosReviewedBy: input.reviewedBy,
       tosReviewedAt: new Date(),
@@ -135,6 +148,14 @@ export const scraperService = {
       // ודחוי" בו-זמנית.
       ...(input.status === 'REJECTED' && { isActive: false }),
     });
+    await recordAudit({
+      entityType: 'ScraperSource',
+      entityId: id,
+      action: 'UPDATE',
+      changedFields: { tosStatus: input.status, notes: input.notes },
+      performedBy: input.reviewedBy,
+    });
+    return source;
   },
 
   // הפעלה בפועל: חסומה אם ToS לא אושר. זה השער השני (הראשון הוא
@@ -144,26 +165,26 @@ export const scraperService = {
     if (source.tosStatus !== 'APPROVED') {
       throw AppError.validation('Cannot activate a source whose ToS has not been approved');
     }
-    return scraperRepository.updateSource(id, { isActive: true });
+    const updated = await scraperRepository.updateSource(id, { isActive: true });
+    await recordAudit({ entityType: 'ScraperSource', entityId: id, action: 'ACTIVATE' });
+    return updated;
   },
 
   async deactivate(id: string) {
     await this.getSourceById(id);
-    return scraperRepository.updateSource(id, { isActive: false });
+    const updated = await scraperRepository.updateSource(id, { isActive: false });
+    await recordAudit({ entityType: 'ScraperSource', entityId: id, action: 'DEACTIVATE' });
+    return updated;
   },
 
   // ---------- הרצת סריקה ----------
-
-  // מריץ את כל המקורות שעברו את שני השערים (isActive + tosStatus
-  // APPROVED). זו נקודת הכניסה שה-Cron היומי קורא לה.
-  async runAllDueSources() {
-    const sources = await scraperRepository.findRunnableSources();
-    const results = [];
-    for (const source of sources) {
-      results.push(await this.runSource(source.id));
-    }
-    return results;
-  },
+  //
+  // הערה (שלב 5, ב.5.3): "מריץ את כל המקורות המוכנים בבת אחת" הוסר
+  // מכאן — הפונקציה הזו הייתה קיימת ולא נקראה, והיא לא יכולה לכבד
+  // את scheduleCron הפרטני של כל מקור (מקור עם "0 3 * * *" ומקור
+  // עם "0 */6 * * *" חייבים לרוץ בקצב שונה, לא באותו tick חיצוני).
+  // התזמון האמיתי חי ב-scheduler.ts: job נפרד לכל מקור עם ה-cron
+  // string שלו, לא קריאה גורפת אחת.
 
   async runSource(sourceId: string) {
     const source = await this.getSourceById(sourceId);
@@ -182,14 +203,10 @@ export const scraperService = {
 
     const run = await scraperRepository.createRun(sourceId);
     let itemsFound = 0;
+    let itemsCreated = 0;
     let itemsUpdated = 0;
     let itemsFlagged = 0;
     let itemsSkipped = 0;
-    // itemsCreated נשאר 0 לאורך כל הריצה במכוון: סריקה לעולם אינה
-    // יוצרת הטבה חדשה — היא מעלה הצעה לתור הבדיקה, וההטבה נוצרת
-    // רק כשאדם מאשר אותה (reviewItem). השדה נשמר בסכמה לקראת
-    // שיוך אוטומטי עתידי.
-    const itemsCreated = 0;
 
     try {
       // הערה: fetchRawItems הוא ה"מנוע" בפועל (HTTP+cheerio או
@@ -202,14 +219,16 @@ export const scraperService = {
       itemsSkipped = fetched.skipped;
 
       for (const fields of rawItems) {
-        const outcome = await this.processScrapedItem(source.id, run.id, fields);
+        const outcome = await this.processScrapedItem(source, run.id, fields);
+        if (outcome === 'CREATED') itemsCreated++;
         if (outcome === 'UPDATED') itemsUpdated++;
         if (outcome === 'FLAGGED') itemsFlagged++;
       }
 
       // ריצה שדילגה על כל מה שמצאה אינה הצלחה: זו החתימה של selector
       // שנשבר אחרי שינוי מבנה באתר המקור. בלי הסימון הזה היא נראית
-      // בדיוק כמו "אין הטבות חדשות".
+      // בדיוק כמו "אין הטבות חדשות". סיבה 3 מתוך שלוש ההתראות
+      // שאושרו (א.2) — המנהל צריך לדעת בלי לגלות בעצמו.
       const allSkipped = itemsSkipped > 0 && itemsFound === 0;
       const status = allSkipped ? 'PARTIAL' : 'SUCCESS';
       if (allSkipped) {
@@ -217,6 +236,7 @@ export const scraperService = {
           { sourceId, runId: run.id, itemsSkipped },
           'Scraper run skipped every card it found — selectors are probably broken'
         );
+        await scraperAlerts.selectorsLikelyBroken({ sourceName: source.name, itemsSkipped, runId: run.id });
       }
 
       const finished = await scraperRepository.finishRun(run.id, {
@@ -245,6 +265,8 @@ export const scraperService = {
       });
       await scraperRepository.updateSource(sourceId, { lastRunAt: new Date(), lastRunStatus: 'FAILED' });
       logger.error({ sourceId, runId: run.id, err }, 'Scraper run failed');
+      // סיבה 2 מתוך שלוש ההתראות שאושרו — ריצה שנכשלה בחריגה.
+      await scraperAlerts.runFailed({ sourceName: source.name, errorMessage, runId: failed.id });
 
       // נזרק ולא נבלע: קודם לכן הכשל הוחזר כתשובת 200 רגילה, והמנהל
       // קיבל מסך ירוק על ריצה שנכשלה. פרטי הריצה נשמרים ב-details
@@ -262,11 +284,14 @@ export const scraperService = {
 
   // מטפל בפריט בודד: matching -> confidence -> יצירת ScrapedItem ->
   // אם confidence מספיק גבוה, פרסום/עדכון אוטומטי; אחרת תור בדיקה.
+  // source מועבר במלואו (לא רק sourceId) כי צריך לקרוא ממנו את
+  // עוגן השיוך האוטומטי (defaultProgramId/defaultBrandId/defaultCategoryId).
   async processScrapedItem(
-    sourceId: string,
+    source: ScraperSourceAnchor & { id: string; name: string },
     runId: string,
     fields: RawScrapedFields
-  ): Promise<'UPDATED' | 'FLAGGED' | 'SKIPPED'> {
+  ): Promise<'CREATED' | 'UPDATED' | 'FLAGGED' | 'SKIPPED'> {
+    const sourceId = source.id;
     const matchResult = await matchingService.match(sourceId, fields);
 
     if (matchResult.kind === 'UNCHANGED') return 'SKIPPED';
@@ -276,7 +301,16 @@ export const scraperService = {
     const previousValue = previousBenefit?.discountValue ? Number(previousBenefit.discountValue) : undefined;
 
     const confidence = confidenceService.calculate(matchResult, fields, previousValue);
-    const autoPublish = confidenceService.shouldAutoPublish(confidence, matchResult);
+    const autoScopeOk = hasAutoScopeAnchor(source);
+    const autoPublish = confidenceService.shouldAutoPublish(confidence, matchResult, autoScopeOk);
+
+    // אם NEW נחסם רק בגלל היעדר עוגן שיוך (לא ציון נמוך), זו הסיבה
+    // האמיתית שהמנהל צריך לראות — הן בדשבורד (confidenceReasons)
+    // והן במייל. מחושב לפני היצירה כדי ששני הערוצים יציגו אותו דבר.
+    const missingAnchor = matchResult.kind === 'NEW' && !autoScopeOk;
+    const reasons = missingAnchor
+      ? [...confidence.reasons, 'אין למקור עוגן שיוך (מועדון/מותג + קטגוריה) — לא ניתן לפרסם אוטומטית']
+      : confidence.reasons;
 
     // מופעים קודמים של אותו פריט שעדיין ממתינים להכרעה כבר לא
     // רלוונטיים — המופע שנוצר עכשיו מחליף אותם. בלי זה, סריקה
@@ -289,23 +323,78 @@ export const scraperService = {
       externalId: fields.externalId,
       rawData: fields as never,
       confidenceScore: confidence.score,
-      confidenceReasons: confidence.reasons,
+      confidenceReasons: reasons,
       status: autoPublish ? 'AUTO_PUBLISHED' : 'PENDING_REVIEW',
       ...(matchResult.kind === 'UPDATE' && { matchedBenefit: { connect: { id: matchResult.benefitId } } }),
     });
 
-    // UNCHANGED כבר יצא למעלה, ולכן נותרו בדיוק שני מסלולים:
-    // עדכון להטבה קיימת שעבר את סף הביטחון, וכל השאר.
-    if (matchResult.kind === 'UPDATE' && autoPublish) {
-      await this.applyUpdate(matchResult.benefitId, fields, item.id);
-      return 'UPDATED';
+    if (autoPublish) {
+      if (matchResult.kind === 'UPDATE') {
+        await this.applyUpdate(matchResult.benefitId, fields, item.id);
+        return 'UPDATED';
+      }
+      // NEW + autoPublish: אפשרי רק כש-autoScopeOk הוא true (ראו
+      // shouldAutoPublish) — יש עוגן שיוך תקין, אז יוצרים את ההטבה
+      // במלואה כולל BenefitScope, בלי אדם בלולאה.
+      const created = await this.createBenefitFromScrapedItem(source, fields, item.id);
+      await scraperRepository.updateItemStatus(item.id, { status: 'AUTO_PUBLISHED', matchedBenefitId: created.id });
+      return 'CREATED';
     }
 
-    // הטבה חדשה תמיד מגיעה לכאן: shouldAutoPublish מחזיר false
-    // ל-NEW ללא תנאי, וגם אריתמטית ציון של NEW חסום ב-60 (ניכוי
-    // קבוע של 40) מול סף פרסום של 70. שתי ההגנות מכוונות — אין
-    // "אוטומטי" להטבה שמעולם לא הייתה במערכת.
+    // כל מה שנשאר: NEW בלי עוגן שיוך, או ציון מתחת לסף. סיבה 1
+    // מתוך שלוש ההתראות שאושרו — פריט שנכנס לתור הבדיקה.
+    await scraperAlerts.itemFlagged({
+      sourceName: source.name,
+      title: fields.title,
+      confidenceScore: confidence.score,
+      confidenceReasons: reasons,
+      scrapedItemId: item.id,
+    });
     return 'FLAGGED';
+  },
+
+  // יוצר Benefit חדש מתוך פריט שעבר את סף הביטחון ויש לו עוגן שיוך
+  // תקין, כולל שורת BenefitScope. משותף בין המסלול האוטומטי (כאן)
+  // לאישור הידני (reviewItem) כדי שהשיוך לא יישכח באחד מהם.
+  async createBenefitFromScrapedItem(
+    source: ScraperSourceAnchor,
+    fields: RawScrapedFields,
+    scrapedItemId: string,
+    categoryIdOverride?: string
+  ) {
+    const categoryId = categoryIdOverride ?? source.defaultCategoryId;
+    if (!categoryId) {
+      throw AppError.validation('categoryId is required when approving a new benefit');
+    }
+    const valueScore = await benefitService.computeValueScore({
+      benefitType: 'OTHER',
+      discountValue: fields.discountValue,
+      categoryId,
+    });
+    // scopeRow ריק (למקור אין defaultProgramId וגם לא defaultBrandId)
+    // אומר "אין ממה לגזור שיוך" — לא "שייך לכולם". יצירת שורת scope
+    // עם כל השדות null הייתה עושה בדיוק את הטעות ההפוכה, ולכן
+    // מדלגים על .create כשהוא ריק ומשאירים את ההטבה בלי scope (פער
+    // ידוע: המנהל משלים שיוך בעריכת ההטבה, ראו ScopeEditor).
+    const scopeRow = buildAutoScopeRow(source);
+    const hasScope = Object.keys(scopeRow).length > 0;
+
+    return prisma.benefit.create({
+      data: {
+        slug: matchingService.slugify(fields.title),
+        title: fields.title,
+        shortDescription: fields.shortDescription ?? fields.title,
+        category: { connect: { id: categoryId } },
+        benefitType: 'OTHER',
+        discountValue: fields.discountValue,
+        imageUrl: fields.imageUrl,
+        valueScore,
+        isActive: true,
+        sourceMetadata: { title: { source: 'scraper', scrapedItemId } },
+        lastScrapedItem: { connect: { id: scrapedItemId } },
+        ...(hasScope && { scopes: { create: scopeRow } }),
+      },
+    });
   },
 
   // מעדכן הטבה קיימת מתוצאת סריקה, כולל תיעוד sourceMetadata לכל
@@ -464,7 +553,15 @@ export const scraperService = {
     const item = await this.getItemById(id);
 
     if (input.decision === 'REJECT') {
-      return scraperRepository.updateItemStatus(id, { status: 'REJECTED', reviewedBy: input.reviewedBy });
+      const rejected = await scraperRepository.updateItemStatus(id, { status: 'REJECTED', reviewedBy: input.reviewedBy });
+      await recordAudit({
+        entityType: 'ScrapedItem',
+        entityId: id,
+        action: 'UPDATE',
+        changedFields: { decision: 'REJECT' },
+        performedBy: input.reviewedBy,
+      });
+      return rejected;
     }
 
     const rawData = item.rawData as unknown as RawScrapedFields;
@@ -474,49 +571,42 @@ export const scraperService = {
       await this.applyUpdate(item.matchedBenefitId, fields, item.id);
     } else {
       // אישור הטבה חדשה: יוצרים אותה בפועל כעת, לא בזמן הסריקה.
-      // categoryId הוא חובה ב-Benefit ואינו חלק מ-scrapeConfig
-      // הבסיסי — המנהל נדרש לספק אותו כ-override באישור.
-      if (!input.overrides?.categoryId) {
-        throw AppError.validation('categoryId is required when approving a new benefit');
-      }
-      // אותו חישוב שכל הטבה אחרת עוברת. benefitType כאן הוא 'OTHER'
-      // (הסורק אינו מזהה סוג הטבה), ולכן הציון יוצא 0 — אבל החישוב
-      // נעשה דרך אותה נקודה, כך שכשסיווג הסוג ישתפר הציון יתעדכן
-      // מעצמו במקום להישאר 0 שקט.
-      const valueScore = await benefitService.computeValueScore({
-        benefitType: 'OTHER',
-        discountValue: fields.discountValue,
-        categoryId: input.overrides.categoryId,
-      });
+      // categoryId הוא חובה ב-Benefit — המנהל מספק אותו כ-override
+      // אלא אם למקור יש defaultCategoryId (אז זו ברירת המחדל).
+      const source = await this.getSourceById(item.sourceId);
+      const categoryId = input.overrides?.categoryId ?? source.defaultCategoryId ?? undefined;
 
-      const created = await prisma.benefit.create({
-        data: {
-          slug: matchingService.slugify(fields.title),
-          title: fields.title,
-          shortDescription: fields.shortDescription ?? fields.title,
-          category: { connect: { id: input.overrides.categoryId } },
-          benefitType: 'OTHER',
-          discountValue: fields.discountValue,
-          imageUrl: fields.imageUrl,
-          valueScore,
-          isActive: true,
-          sourceMetadata: { title: { source: 'scraper', scrapedItemId: item.id } },
-          lastScrapedItem: { connect: { id: item.id } },
-        },
-      });
-      // matchedBenefitId — ולא רק lastScrapedItemId על ההטבה. אלה
-      // שני relations נפרדים, ומנוע ההתאמה בודק דווקא את זה: בלעדיו
-      // הפריט נשאר "לא מקושר" לנצח, הזיהוי לפי externalId לא תופס,
-      // והמנוע נופל לחיפוש לפי slug של הכותרת — כך ששינוי קטן
-      // בכותרת באתר המקור יוצר הטבה כפולה.
+      // אותו נתיב יצירה שהמסלול האוטומטי משתמש בו — כולל חישוב
+      // valueScore, יצירת BenefitScope מעוגן המקור אם יש (ואם אין —
+      // בלי scope, והמנהל משלים שיוך בעריכת ההטבה, ראו ב.5.2),
+      // וקישור matchedBenefitId ולא רק lastScrapedItemId (שני
+      // relations נפרדים; בלעדי matchedBenefitId מנוע ההתאמה נופל
+      // לחיפוש לפי slug בריצה הבאה ועלול ליצור הטבה כפולה).
+      const created = await this.createBenefitFromScrapedItem(source, fields, item.id, categoryId);
+
       await scraperRepository.updateItemStatus(id, {
         status: 'APPROVED',
         reviewedBy: input.reviewedBy,
         matchedBenefitId: created.id,
       });
+      await recordAudit({
+        entityType: 'ScrapedItem',
+        entityId: id,
+        action: 'UPDATE',
+        changedFields: { decision: 'APPROVE', createdBenefitId: created.id },
+        performedBy: input.reviewedBy,
+      });
       return created;
     }
 
-    return scraperRepository.updateItemStatus(id, { status: 'APPROVED', reviewedBy: input.reviewedBy });
+    const approved = await scraperRepository.updateItemStatus(id, { status: 'APPROVED', reviewedBy: input.reviewedBy });
+    await recordAudit({
+      entityType: 'ScrapedItem',
+      entityId: id,
+      action: 'UPDATE',
+      changedFields: { decision: 'APPROVE', updatedBenefitId: item.matchedBenefitId },
+      performedBy: input.reviewedBy,
+    });
+    return approved;
   },
 };

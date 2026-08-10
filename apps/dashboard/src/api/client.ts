@@ -59,6 +59,15 @@ function translateBusinessMessage(message: string): string {
 // במקום ה-message הגנרי "Request validation failed". fieldLabels ממפה
 // שם שדה מה-DTO לתווית העברית שמוצגת לצידו באותו טופס.
 export function formatSaveError(err: unknown, fieldLabels: Record<string, string> = {}): string {
+  // הודעות אימות ה-auth — כבר בעברית מהשרת (auth.routes.ts), אבל
+  // ADMIN_AUTH_NOT_CONFIGURED צריך תרגום כי היא הודעת מפתחים.
+  if (err instanceof ApiError && err.code === 'INVALID_PASSWORD') {
+    return err.message;
+  }
+  if (err instanceof ApiError && err.code === 'ADMIN_AUTH_NOT_CONFIGURED') {
+    return 'ההתחברות לא הוגדרה בשרת. יש לפנות למי שהקים את המערכת.';
+  }
+
   // כשל ריצת סורק מגיע עם code ייעודי ו-details מובנה. בלי הטיפול
   // כאן הייתה מוצגת הודעת השרת באנגלית.
   if (err instanceof ApiError && err.code === 'SCRAPER_RUN_FAILED') {
@@ -82,8 +91,32 @@ export function formatSaveError(err: unknown, fieldLabels: Record<string, string
   return err instanceof Error ? err.message : 'השמירה נכשלה';
 }
 
+// שולחת/מקבלת את עוגיית ההתחברות — בלעדיה כל בקשה מוגנת הייתה
+// נדחית גם אחרי כניסה מוצלחת.
+const FETCH_DEFAULTS: RequestInit = { credentials: 'include' };
+
+// session שפג תוקפו (או שהוסר) חייב להחזיר את המנהלת למסך הכניסה
+// באופן מיידי, לא להציג לה שגיאת API סתומה על הטופס שהיא מילאה.
+// טעינה מחדש מלאה, לא ניווט דרך react-router — הקובץ הזה אינו
+// קומפוננטה ואין לו גישה ל-navigate().
+function redirectToLogin() {
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login';
+  }
+}
+
+// UNAUTHENTICATED = אין session תקף (עוגייה חסרה/פגה) — זה המקרה
+// שצריך להעביר מיד למסך הכניסה. INVALID_PASSWORD (401 גם הוא,
+// מוחזר מ-POST /auth/login עצמו) הוא תשובה תקינה לניסיון כניסה
+// כושל, לא session שפג — חייב *לא* לגרום להפניה, אחרת מסך הכניסה
+// עצמו היה לולאה בלי סוף בכל הקלדת סיסמה שגויה.
+function isSessionExpired(body: ApiErrorResponse): boolean {
+  return body.error.code === 'UNAUTHENTICATED';
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...FETCH_DEFAULTS,
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
@@ -94,6 +127,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const body = (await response.json()) as ApiSuccessResponse<T> | ApiErrorResponse;
 
   if (!body.success) {
+    if (isSessionExpired(body)) redirectToLogin();
     throw new ApiError(body.error.code, body.error.message, body.error.details);
   }
   return body.data;
@@ -105,11 +139,16 @@ async function requestPaginated<T>(
   options?: RequestInit
 ): Promise<{ data: T; meta: { page: number; pageSize: number; total: number } }> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...FETCH_DEFAULTS,
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
+
   const body = (await response.json()) as ApiSuccessResponse<T> | ApiErrorResponse;
-  if (!body.success) throw new ApiError(body.error.code, body.error.message, body.error.details);
+  if (!body.success) {
+    if (isSessionExpired(body)) redirectToLogin();
+    throw new ApiError(body.error.code, body.error.message, body.error.details);
+  }
   return { data: body.data, meta: body.meta ?? { page: 1, pageSize: body.data instanceof Array ? body.data.length : 1, total: 0 } };
 }
 

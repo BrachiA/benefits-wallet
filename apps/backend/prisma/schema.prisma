@@ -228,6 +228,7 @@ model Category {
 
   brands     Brand[]
   benefits   Benefit[]
+  scraperSources ScraperSource[]
 
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
@@ -619,11 +620,18 @@ model ScraperSource {
   scrapeConfig      Json
 
   // עוגן שיוך: תוצאה שנמצאת במקור הזה משויכת אוטומטית, בלי לדרוש
-  // שכל פריט סרוק "יידע" לאיזה מועדון/מותג הוא שייך.
+  // שכל פריט סרוק "יידע" לאיזה מועדון/מותג הוא שייך. נקרא בפועל
+  // ב-scraper.service (אישור/פרסום אוטומטי) — ראו scraperAutoScope.ts.
   defaultProgramId  String?
   defaultProgram    Program?          @relation(fields: [defaultProgramId], references: [id])
   defaultBrandId    String?
   defaultBrand      Brand?            @relation(fields: [defaultBrandId], references: [id])
+  // חובה עבור פרסום/יצירה אוטומטיים: ל-Benefit יש categoryId חובה,
+  // והסורק אינו מזהה קטגוריה מתוך הדף. בלי עוגן הקטגוריה הזה,
+  // הטבה חדשה שעוברת את סף הביטחון לא יכולה להתפרסם לבד — היא
+  // עוברת לתור הבדיקה (ראו scraperAlerts, "אין עוגן שיוך/קטגוריה").
+  defaultCategoryId String?
+  defaultCategory   Category?         @relation(fields: [defaultCategoryId], references: [id])
 
   requestDelayMs    Int               @default(1000) // rate limiting מכבד כלפי המקור
   scheduleCron      String            @default("0 3 * * *") // ברירת מחדל: פעם ביום, 03:00

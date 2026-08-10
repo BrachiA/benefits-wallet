@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { scraperController } from './scraper.controller';
 import { validateRequest } from '../../middleware/validateRequest';
+import { requireAdminAuth } from '../../middleware/requireAdminAuth';
 import {
   createScraperSourceSchema,
   listScrapedItemsQuerySchema,
@@ -11,6 +12,11 @@ import {
 } from './scraper.dto';
 
 export const scraperRouter = Router();
+
+// כל מודול הסורק הוא דשבורד-בלבד — האפליקציה לא קוראת שום נתיב
+// כאן, אפילו לא לקריאה. לכן, בשונה משאר המודולים, כל הראוטר מוגן,
+// כולל ה-GETs.
+scraperRouter.use(requireAdminAuth);
 
 // ScraperSource CRUD
 scraperRouter.get('/sources', validateRequest(listScraperSourcesQuerySchema, 'query'), scraperController.listSources);

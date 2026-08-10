@@ -1,4 +1,5 @@
 import { AppError } from '../../lib/AppError';
+import { recordAudit } from '../../lib/auditLog';
 import { couponRepository } from './coupon.repository';
 import type { CreateCouponInput, ListCouponsQuery, UpdateCouponInput } from './coupon.dto';
 
@@ -21,7 +22,9 @@ export const couponService = {
     if (existing) throw AppError.validation(`Coupon code "${input.code}" already exists`);
 
     const { benefitId, ...rest } = input;
-    return couponRepository.create({ ...rest, benefit: { connect: { id: benefitId } } });
+    const coupon = await couponRepository.create({ ...rest, benefit: { connect: { id: benefitId } } });
+    await recordAudit({ entityType: 'Coupon', entityId: coupon.id, action: 'CREATE', changedFields: input });
+    return coupon;
   },
 
   async update(id: string, input: UpdateCouponInput) {
@@ -30,12 +33,16 @@ export const couponService = {
       const existing = await couponRepository.findByCode(input.code);
       if (existing && existing.id !== id) throw AppError.validation(`Coupon code "${input.code}" already exists`);
     }
-    return couponRepository.update(id, input);
+    const coupon = await couponRepository.update(id, input);
+    await recordAudit({ entityType: 'Coupon', entityId: id, action: 'UPDATE', changedFields: input });
+    return coupon;
   },
 
   async remove(id: string) {
     await this.getById(id);
-    return couponRepository.softDelete(id);
+    const result = await couponRepository.softDelete(id);
+    await recordAudit({ entityType: 'Coupon', entityId: id, action: 'DELETE' });
+    return result;
   },
 
   // לוגיקת מימוש: נבדקת בנפרד מ-CRUD כי היא תיקרא בעתיד מ-endpoint

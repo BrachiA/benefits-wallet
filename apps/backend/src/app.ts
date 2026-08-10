@@ -1,11 +1,13 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { env } from './config/env';
 import { requestLogger } from './middleware/requestLogger';
 import { errorHandler } from './middleware/errorHandler';
 import { notFound } from './middleware/notFound';
 
+import { authRouter } from './modules/auth/auth.routes';
 import { issuerRouter } from './modules/issuer/issuer.routes';
 import { programRouter } from './modules/program/program.routes';
 import { categoryRouter } from './modules/category/category.routes';
@@ -27,19 +29,27 @@ export const app = express();
 app.use(helmet());
 app.use(
   cors({
-    origin: env.CORS_ORIGINS === '*' ? '*' : env.CORS_ORIGINS.split(','),
+    // origin:true (ולא '*') כדי לשקף את המקור המבקש בפועל — cookie
+    // עם credentials לא נשלח כשה-CORS מרשה '*' במפורש. כשמוגדרת
+    // רשימה סגורה ב-CORS_ORIGINS, נאכפת רק היא.
+    origin: env.CORS_ORIGINS === '*' ? true : env.CORS_ORIGINS.split(','),
+    credentials: true,
   })
 );
 app.use(express.json());
+app.use(cookieParser());
 app.use(requestLogger);
 
 app.get('/health', (_req, res) => {
   res.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } });
 });
 
-// /api/v1 מההתחלה: כשתתווסף Authentication בעתיד, סביר שישתנה
-// response shape — עדיף נתיב versioning מוכן מהיום הראשון.
+// /api/v1 מההתחלה: response shape יציב לאורך הגרסה.
+// הגנת ההתחברות (requireAdminAuth) מוחלת בתוך כל *.routes.ts בנפרד
+// על נתיבי כתיבה/ניהול בלבד — קריאות GET שהאפליקציה צורכת נשארות
+// פתוחות. authRouter עצמו (login/logout/me) חייב להישאר ציבורי.
 const v1 = express.Router();
+v1.use('/auth', authRouter);
 v1.use('/issuers', issuerRouter);
 v1.use('/programs', programRouter);
 v1.use('/categories', categoryRouter);

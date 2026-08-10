@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
+import { apiClient } from '../../api/client';
 
 // קיבוץ הניווט לפי משמעות עסקית, לא רק רשימה שטוחה: "ספקי הטבה"
 // (מי נותן), "קטלוג" (מה מוצג), "סורק" (מאיפה זה מגיע אוטומטית).
@@ -33,7 +34,18 @@ const navGroups = [
   },
 ];
 
-export function Layout({ children }: { children: ReactNode }) {
+export function Layout({ children, onLogout }: { children: ReactNode; onLogout: () => void }) {
+  async function handleLogout() {
+    // גם אם הבקשה נכשלת (למשל השרת כבר לא מגיב) המנהלת חייבת
+    // לחזור למסך הכניסה — לא להישאר תקועה במסך שאין לה יותר גישה
+    // אליו בפועל.
+    try {
+      await apiClient.post('/auth/logout', {});
+    } finally {
+      onLogout();
+    }
+  }
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <aside
@@ -90,6 +102,23 @@ export function Layout({ children }: { children: ReactNode }) {
             </div>
           ))}
         </nav>
+
+        <button
+          onClick={handleLogout}
+          style={{
+            marginTop: 12,
+            padding: '8px 12px',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 13,
+            color: 'var(--text-on-sidebar-muted)',
+            background: 'transparent',
+            border: 'none',
+            textAlign: 'right',
+            cursor: 'pointer',
+          }}
+        >
+          התנתקות
+        </button>
       </aside>
 
       <main style={{ flex: 1, padding: '28px 36px', maxWidth: 1200 }}>{children}</main>

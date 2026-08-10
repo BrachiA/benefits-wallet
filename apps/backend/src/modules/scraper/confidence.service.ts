@@ -46,11 +46,14 @@ export const confidenceService = {
     const reasons: string[] = [];
     let score = 100;
 
-    // כלל 1: הטבה חדשה לגמרי — תמיד דורשת בדיקה אנושית, ללא יוצא
-    // מן הכלל. אין "אוטומטי" להטבה שמעולם לא הייתה במערכת.
+    // כלל 1: הטבה חדשה לגמרי. שלב 5 (א.2) פתח את הדלת לפרסום
+    // אוטומטי של הטבה חדשה כשיש למקור עוגן שיוך תקין (defaultProgramId/
+    // defaultBrandId + defaultCategoryId) — לכן הניכוי ירד מ-40 ל-20,
+    // כדי שהטבה מושלמת (100) תוכל לעבור את סף ה-70 (100-20=80).
+    // הטבה עם עוד בעיה (למשל ערך הנחה חסר, 65) עדיין נופלת לתור.
     if (matchResult.kind === 'NEW') {
-      reasons.push('הטבה חדשה שלא זוהתה במערכת — דורשת אישור ידני');
-      score -= 40;
+      reasons.push('הטבה חדשה שלא זוהתה במערכת — דורשת שיוך תקין כדי להתפרסם אוטומטית');
+      score -= 20;
     }
 
     // כלל 2: שדה קריטי חסר (כותרת ריקה, אין שום ערך כספי/נקודות)
@@ -87,12 +90,14 @@ export const confidenceService = {
     return { score, reasons };
   },
 
-  shouldAutoPublish(confidence: ConfidenceResult, matchResult: MatchResult): boolean {
-    // הטבה חדשה לעולם לא מתפרסמת אוטומטית, גם אם הציון גבוה במקרה
-    // (למשל matchResult.kind==='NEW' אבל שאר השדות מלאים) — זו
-    // החלטה עסקית מפורשת, לא רק תוצאה של החשבון.
-    if (matchResult.kind === 'NEW') return false;
+  // hasAutoScopeAnchor: האם למקור יש עוגן שיוך תקין (defaultProgramId
+  // או defaultBrandId, וגם defaultCategoryId). הטבה *חדשה* דורשת אותו
+  // כדי להתפרסם אוטומטית — בלעדיו אין למי לשייך אותה ואין לה קטגוריה,
+  // ושני אלה חובה על Benefit. עדכון להטבה קיימת אינו תלוי בעוגן,
+  // כי היא כבר משויכת.
+  shouldAutoPublish(confidence: ConfidenceResult, matchResult: MatchResult, hasAutoScopeAnchor: boolean): boolean {
     if (matchResult.kind === 'UNCHANGED') return true; // אין שינוי בפועל, אין מה לאשר
+    if (matchResult.kind === 'NEW' && !hasAutoScopeAnchor) return false;
     return confidence.score >= AUTO_PUBLISH_THRESHOLD;
   },
 };

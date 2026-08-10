@@ -51,7 +51,12 @@ export const createBenefitSchema = z.object({
     .min(1, 'Benefit must have at least one scope'),
 });
 
-export const updateBenefitSchema = createBenefitSchema.partial().omit({ scopes: true });
+// scopes כלול (לא מסונן החוצה כמו קודם): עריכת שיוך על הטבה קיימת
+// היא הדרך היחידה שבה מנהלת יכולה לתקן "למי ההטבה תקפה" אחרי
+// שנוצרה — קודם לא הייתה אפשרות כזו בכלל (ראו replaceScopes ב-
+// benefit.repository.ts, שהיה קיים ומעולם לא נקרא). אופציונלי:
+// PATCH בלי scopes לא נוגע בשיוך הקיים.
+export const updateBenefitSchema = createBenefitSchema.partial();
 
 export const listBenefitsQuerySchema = z.object({
   programIds: z

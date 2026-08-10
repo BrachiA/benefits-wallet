@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma';
 import { AppError } from '../../lib/AppError';
+import { recordAudit } from '../../lib/auditLog';
 import { campaignRepository } from './campaign.repository';
 import type { CreateCampaignInput, ListCampaignsQuery, UpdateCampaignInput } from './campaign.dto';
 
@@ -21,6 +22,7 @@ export const campaignService = {
 
     const campaign = await campaignRepository.create(rest);
     if (benefitIds.length) await campaignRepository.replaceBenefitLinks(campaign.id, benefitIds);
+    await recordAudit({ entityType: 'Campaign', entityId: campaign.id, action: 'CREATE', changedFields: input });
     return this.getById(campaign.id);
   },
 
@@ -33,12 +35,15 @@ export const campaignService = {
       await this.validateBenefitIds(benefitIds);
       await campaignRepository.replaceBenefitLinks(id, benefitIds);
     }
+    await recordAudit({ entityType: 'Campaign', entityId: id, action: 'UPDATE', changedFields: input });
     return this.getById(id);
   },
 
   async remove(id: string) {
     await this.getById(id);
-    return campaignRepository.softDelete(id);
+    const result = await campaignRepository.softDelete(id);
+    await recordAudit({ entityType: 'Campaign', entityId: id, action: 'DELETE' });
+    return result;
   },
 
   async validateBenefitIds(benefitIds: string[]) {

@@ -29,6 +29,9 @@ export const createScraperSourceSchema = z.object({
   scrapeConfig: scrapeConfigSchema,
   defaultProgramId: z.string().uuid().optional(),
   defaultBrandId: z.string().uuid().optional(),
+  // עוגן הקטגוריה לפרסום/יצירה אוטומטיים (שלב 5, א.2) — Benefit.categoryId
+  // הוא חובה, והסורק אינו יכול לגזור אותו מהדף.
+  defaultCategoryId: z.string().uuid().optional(),
   requestDelayMs: z.number().int().positive().default(1000),
   scheduleCron: z.string().default('0 3 * * *'),
   // isActive במכוון לא נכלל כאן: מקור חדש נוצר תמיד לא-פעיל, מופעל

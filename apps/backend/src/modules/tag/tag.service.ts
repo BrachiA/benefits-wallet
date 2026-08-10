@@ -1,4 +1,5 @@
 import { AppError } from '../../lib/AppError';
+import { recordAudit } from '../../lib/auditLog';
 import { tagRepository } from './tag.repository';
 import type { CreateTagInput, ListTagsQuery, UpdateTagInput } from './tag.dto';
 
@@ -15,16 +16,22 @@ export const tagService = {
   },
 
   async create(input: CreateTagInput) {
-    return tagRepository.create(input);
+    const tag = await tagRepository.create(input);
+    await recordAudit({ entityType: 'Tag', entityId: tag.id, action: 'CREATE', changedFields: input });
+    return tag;
   },
 
   async update(id: string, input: UpdateTagInput) {
     await this.getById(id);
-    return tagRepository.update(id, input);
+    const tag = await tagRepository.update(id, input);
+    await recordAudit({ entityType: 'Tag', entityId: id, action: 'UPDATE', changedFields: input });
+    return tag;
   },
 
   async remove(id: string) {
     await this.getById(id);
-    return tagRepository.softDelete(id);
+    const result = await tagRepository.softDelete(id);
+    await recordAudit({ entityType: 'Tag', entityId: id, action: 'DELETE' });
+    return result;
   },
 };

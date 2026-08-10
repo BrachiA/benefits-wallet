@@ -51,7 +51,9 @@ export function BenefitFormPage() {
           isPopular: b.isPopular,
           isFeatured: b.isFeatured,
         });
-        setScopes(b.scopes.map((s) => ({ programId: s.programId, brandId: s.brandId, storeId: s.storeId })));
+        setScopes(
+          b.scopes.map((s) => ({ programId: s.programId, brandId: s.brandId, storeId: s.storeId, cityId: s.cityId }))
+        );
       });
     }
   }, [id, isEditMode]);
@@ -65,7 +67,10 @@ export function BenefitFormPage() {
     setIsSaving(true);
     try {
       if (isEditMode) {
-        await apiClient.patch(`/benefits/${id}`, form);
+        // scopes נכלל גם בעדכון (לא רק ביצירה): זו הדרך היחידה
+        // לתקן "למי ההטבה תקפה" אחרי שההטבה כבר קיימת — קודם לא
+        // הייתה אפשרות כזו בכלל, לא בטופס ולא ב-API.
+        await apiClient.patch(`/benefits/${id}`, { ...form, scopes });
       } else {
         await apiClient.post('/benefits', { ...form, scopes });
       }

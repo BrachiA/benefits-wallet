@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma';
 import { AppError } from '../../lib/AppError';
+import { recordAudit } from '../../lib/auditLog';
 import { benefitRepository } from './benefit.repository';
 import { calculateValueScore } from '../recommendation/valueScore';
 import type { CreateBenefitInput, UpdateBenefitInput, ListBenefitsQuery } from './benefit.dto';
@@ -28,17 +29,24 @@ export const benefitService = {
     const { scopes, categoryId, ...benefitData } = input;
     const valueScore = await this.computeValueScore(input);
 
-    return benefitRepository.create({
+    const benefit = await benefitRepository.create({
       ...benefitData,
       valueScore,
       category: { connect: { id: categoryId } },
       scopes: { createMany: { data: scopes } },
     } as never);
+    await recordAudit({ entityType: 'Benefit', entityId: benefit.id, action: 'CREATE', changedFields: input });
+    return benefit;
   },
 
   async update(id: string, input: UpdateBenefitInput) {
     const existing = await this.getById(id); // זורק 404 אם לא קיים, לפני שמנסים לעדכן
-    const { categoryId, ...rest } = input;
+    const { categoryId, scopes, ...rest } = input;
+
+    // scopes אופציונלי ב-update: PATCH בלי השדה לא נוגע בשיוך
+    // הקיים. כשהוא כן מסופק, אותה ולידציה עסקית שחלה ביצירה חלה
+    // גם כאן — FK אמיתי, ולפחות ישות אחת בכל שורה.
+    if (scopes !== undefined) await this.validateScopeReferences(scopes);
 
     // valueScore מחושב מחדש רק אם שדה רלוונטי לחישוב בפועל השתנה
     // (לא בכל PATCH — עדכון isPopular למשל לא אמור לגרום לקריאת
@@ -58,16 +66,26 @@ export const benefitService = {
         })
       : undefined;
 
-    return benefitRepository.update(id, {
+    const updated = await benefitRepository.update(id, {
       ...rest,
       ...(valueScore !== undefined && { valueScore }),
       ...(categoryId && { category: { connect: { id: categoryId } } }),
     } as never);
+
+    // בכוונה אחרי עדכון השדות ולא לפניו/בטרנזקציה משותפת: אם
+    // replaceScopes נכשל, לפחות שינויי השדות האחרים כבר נשמרו,
+    // ולא נשארים במצב "לא נשמר כלום" סתום למנהלת.
+    if (scopes !== undefined) await benefitRepository.replaceScopes(id, scopes);
+
+    await recordAudit({ entityType: 'Benefit', entityId: id, action: 'UPDATE', changedFields: input });
+    return scopes !== undefined ? this.getById(id) : updated;
   },
 
   async remove(id: string) {
     await this.getById(id);
-    return benefitRepository.softDelete(id);
+    const result = await benefitRepository.softDelete(id);
+    await recordAudit({ entityType: 'Benefit', entityId: id, action: 'DELETE' });
+    return result;
   },
 
   // עוטף calculateValueScore הטהור עם שליפת ה-categorySlug שנדרש
