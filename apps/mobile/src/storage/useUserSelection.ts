@@ -21,11 +21,21 @@ export function useUserSelection() {
     setSelection(next);
   }, []);
 
+  // fire-and-forget במכוון: מסך שצופה בהטבה לא צריך לחכות לכתיבת
+  // AsyncStorage כדי לרנדר, וגם לא צריך להריץ מחדש בגלל זה — זה
+  // מעדכן state עבור הפעם הבאה שהמסך הראשי (Home) ייבנה, לא עבור
+  // המסך הנוכחי.
+  const recordCategoryInterest = useCallback((categoryId: string | undefined) => {
+    if (!categoryId) return;
+    userSelectionStorage.recordCategoryInterest(categoryId).then(setSelection);
+  }, []);
+
   return {
     selection,
     isLoading: selection === null,
     toggleProgram,
     toggleFavorite,
+    recordCategoryInterest,
     isProgramSelected: (id: string) => selection?.programIds.includes(id) ?? false,
     isFavorite: (id: string) => selection?.favoriteBenefitIds.includes(id) ?? false,
   };

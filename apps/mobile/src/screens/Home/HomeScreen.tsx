@@ -1,8 +1,10 @@
+import { useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../theme/theme';
 import { useBenefits } from '../../api/hooks/useBenefits';
 import { useCategories } from '../../api/hooks/useCategories';
 import { useUserSelection } from '../../storage/useUserSelection';
+import { personalizedOrder } from '../../storage/personalizedOrder';
 import { BenefitCard } from '../../components/domain/BenefitCard';
 import { EmptyState, LoadingSpinner } from '../../components/common/EmptyState';
 import type { Benefit } from '../../api/types';
@@ -18,15 +20,23 @@ type Props = {
 export function HomeScreen({ onOpenBenefit, onOpenCategory }: Props) {
   const { data: popularBenefits, isLoading: isLoadingBenefits } = useBenefits({ isPopular: true });
   const { data: categories, isLoading: isLoadingCategories } = useCategories();
-  const { isFavorite, toggleFavorite } = useUserSelection();
+  const { isFavorite, toggleFavorite, selection } = useUserSelection();
 
   const topLevelCategories = categories?.filter((c) => !c.parentId) ?? [];
+
+  // סדר רנדומלי עם העדפה לקטגוריות שהמשתמשת צופה/מעיינת בהן יותר
+  // (שלב 6). מחושב מחדש רק כשרשימת ההטבות או ההעדפה משתנות, לא
+  // בכל render — אחרת הרשימה הייתה "מתערבבת מחדש" תוך כדי גלילה.
+  const personalizedBenefits = useMemo(
+    () => personalizedOrder(popularBenefits ?? [], (b) => b.category?.id, selection?.categoryInterest ?? {}),
+    [popularBenefits, selection?.categoryInterest]
+  );
 
   if (isLoadingBenefits) return <LoadingSpinner />;
 
   return (
     <FlatList
-      data={popularBenefits ?? []}
+      data={personalizedBenefits}
       keyExtractor={(b) => b.id}
       contentContainerStyle={styles.list}
       ListHeaderComponent={

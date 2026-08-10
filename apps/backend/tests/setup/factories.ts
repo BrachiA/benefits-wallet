@@ -7,10 +7,10 @@ import { prisma } from '../../src/lib/prisma';
 let counter = 0;
 const uniq = (prefix: string) => `${prefix}-${++counter}`;
 
-export async function createCategory(overrides: { slug?: string; name?: string } = {}) {
+export async function createCategory(overrides: { slug?: string; name?: string; nameEn?: string } = {}) {
   const slug = overrides.slug ?? uniq('cat');
   return prisma.category.create({
-    data: { slug, name: overrides.name ?? slug, path: slug },
+    data: { slug, name: overrides.name ?? slug, nameEn: overrides.nameEn, path: slug },
   });
 }
 
@@ -38,7 +38,15 @@ export async function createProgram(
 }
 
 export async function createBrand(
-  overrides: { slug?: string; name?: string; categoryId?: string; isActive?: boolean; deletedAt?: Date | null } = {}
+  overrides: {
+    slug?: string;
+    name?: string;
+    nameEn?: string;
+    categoryId?: string;
+    isActive?: boolean;
+    deletedAt?: Date | null;
+    searchKeywords?: string[];
+  } = {}
 ) {
   const slug = overrides.slug ?? uniq('brand');
   const categoryId = overrides.categoryId ?? (await createCategory()).id;
@@ -46,9 +54,11 @@ export async function createBrand(
     data: {
       slug,
       name: overrides.name ?? slug,
+      nameEn: overrides.nameEn,
       categoryId,
       isActive: overrides.isActive ?? true,
       deletedAt: overrides.deletedAt ?? null,
+      searchKeywords: overrides.searchKeywords ?? [],
     },
   });
 }

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { ScrollView, Share, StyleSheet, Text, View, Pressable } from 'react-native';
 import { theme } from '../../theme/theme';
 import { useUserSelection } from '../../storage/useUserSelection';
@@ -29,9 +30,17 @@ const channelLabels: Record<Benefit['channel'], string> = {
 };
 
 export function BenefitDetailsScreen({ benefit, onBack }: Props) {
-  const { isFavorite, toggleFavorite } = useUserSelection();
+  const { isFavorite, toggleFavorite, recordCategoryInterest } = useUserSelection();
   const discount = formatDiscount(benefit);
   const endDateLabel = formatEndDate(benefit.endDate);
+
+  // צפייה בפרטי הטבה היא אות עניין בקטגוריה שלה — משמש לסידור
+  // האישי במסך הבית (ראו personalizedOrder.ts). נרשם פעם אחת לכל
+  // כניסה למסך, לא בכל render.
+  useEffect(() => {
+    recordCategoryInterest(benefit.category?.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [benefit.id]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>

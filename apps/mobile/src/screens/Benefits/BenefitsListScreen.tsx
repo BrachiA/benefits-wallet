@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { FlatList, StyleSheet, Text } from 'react-native';
 import { theme } from '../../theme/theme';
 import { useBenefits } from '../../api/hooks/useBenefits';
@@ -42,7 +43,15 @@ export function BenefitsListScreen({
     singleProgramId: programId,
     skip: isStatic,
   });
-  const { isFavorite, toggleFavorite } = useUserSelection();
+  const { isFavorite, toggleFavorite, recordCategoryInterest } = useUserSelection();
+
+  // עיון ברשימה מסוננת-לקטגוריה הוא אות עניין, בדיוק כמו "חיפוש
+  // לפי קטגוריה" מהספק — לא רק צפייה בפרטי הטבה בודדת. לא נרשם
+  // עבור programId/static, שאין בהם קטגוריה יחידה ברורה.
+  useEffect(() => {
+    if (categoryId) recordCategoryInterest(categoryId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryId]);
 
   const benefits = isStatic ? staticBenefits : fetchedBenefits;
   if (!isStatic && isLoading) return <LoadingSpinner />;
