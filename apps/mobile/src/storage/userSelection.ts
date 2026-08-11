@@ -98,8 +98,11 @@ export const userSelectionStorage = {
     let categoryInterest = { ...current.categoryInterest, [categoryId]: nextCount };
 
     if (nextCount > INTEREST_DECAY_THRESHOLD) {
+      // Math.floor: אלה מונים שלמים (ספירת צפיות) — בלעדיו כל
+      // דעיכה הייתה מזהמת אותם בשברים (למשל 7 -> 3.5) שאין להם
+      // משמעות כ"כמות צפיות" ורק מצטברים עם הזמן.
       categoryInterest = Object.fromEntries(
-        Object.entries(categoryInterest).map(([id, count]) => [id, count * INTEREST_DECAY_FACTOR])
+        Object.entries(categoryInterest).map(([id, count]) => [id, Math.floor(count * INTEREST_DECAY_FACTOR)])
       );
     }
 
