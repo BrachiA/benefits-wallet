@@ -76,6 +76,16 @@ enum AuditAction {
   DEACTIVATE
 }
 
+// per-מועדון/מותג: האם חיפוש הלוגו האוטומטי (Gemini + Grounding with
+// Google Search) פעיל, או שמנהלת עצרה אותו והעלתה לוגו ידני שנשאר
+// קבוע. ברירת מחדל AUTO — הופך ל-MANUAL רק כשמנהלת מעלה תמונה
+// בעצמה (ראו program.service/brand.service), לא ניתן להגדיר ידנית
+// בלי להעלות תמונה.
+enum LogoMode {
+  AUTO
+  MANUAL
+}
+
 enum NotificationTrigger {
   ENDING_SOON
   NEW_BENEFIT
@@ -180,6 +190,19 @@ model Program {
   cardImageUrl     String?
   color            String?
 
+  // לוגו ברירת מחדל שנקבע אוטומטית (Gemini + Grounding with Google
+  // Search, ראו modules/duplicateCleanup — שלב "logo_search" באותו
+  // cron שעתי) או הועלה ידנית ע"י מנהלת. נבדל מ-logoUrl (יכול
+  // להיות מוזן ידנית בטופס המועדון בלי קשר לזרימה הזו) ומ-Benefit.
+  // r2ImageUrl (תמונה ספציפית לפריט הטבה בודד) — זהו לוגו ברמת
+  // המועדון כולו, המשמש נפילה חזרה כשלפריט אין תמונה משלו.
+  defaultLogoUrl   String?
+  logoMode         LogoMode    @default(AUTO)
+  // מתי נוסה לאחרונה חיפוש אוטומטי (הצלחה או כישלון) — כמו
+  // aiCategorySuggestedAt ב-ScrapedItem: בלי זה, סבב ה-cron השעתי
+  // היה מנסה שוב על אותו מועדון-בלי-לוגו לנצח, מבזבז מכסת Grounding.
+  logoSearchedAt   DateTime?
+
   description      String?
   joinUrl          String?
   termsUrl         String?
@@ -229,6 +252,7 @@ model Category {
   brands     Brand[]
   benefits   Benefit[]
   scraperSources ScraperSource[]
+  aiSuggestedForItems ScrapedItem[] @relation("ScrapedItemAiSuggestedCategory")
 
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
@@ -260,6 +284,13 @@ model Brand {
   coverImageUrl     String?
   websiteUrl        String?
   onlineShopUrl     String?
+
+  // ראו הערה מקבילה ב-Program — אותה זרימת חיפוש לוגו אוטומטי/ידני,
+  // אותו טיפוס LogoMode משותף.
+  defaultLogoUrl    String?
+  logoMode          LogoMode   @default(AUTO)
+  logoSearchedAt    DateTime?
+
   description       String?
 
   hasOnlineStore    Boolean    @default(false)
@@ -367,6 +398,13 @@ model Benefit {
   termsAndConditions  String?
   externalUrl         String?
   imageUrl            String?
+  // עותק מאוחסן ב-R2 של imageUrl (הורדה+העלאה בזמן אמת בזרימת
+  // הקליטה, ראו scraper.service.createBenefitFromScrapedItem/applyUpdate) —
+  // או, כשלפריט אין תמונה משלו, נפילה חזרה ללוגו ברירת המחדל של
+  // המועדון/מותג (Program/Brand.defaultLogoUrl) שאליו ההטבה משויכת.
+  // imageUrl המקורי (קישור חיצוני, עשוי להישבר) נשאר קיים תמיד בנפרד —
+  // זה השדה שהאפליקציה/דשבורד אמורים להציג בפועל.
+  r2ImageUrl          String?
 
   startDate           DateTime?
   endDate             DateTime?
@@ -578,6 +616,24 @@ model AuditLog {
 }
 
 // ------------------------------------------------------------
+// ALERT SETTINGS — מתג גלובלי יחיד: האם התראות סריקה נשלחות במייל.
+// שורה בודדת (singleton, ראו alertSettings.repository.ts) — לא
+// key-value כללי, כי זה המתג היחיד שנדרש כרגע. משפיע רק על
+// mailer.sendMail (דרך scraperAlerts) — לא על תור הבדיקה/ScraperRun
+// עצמם, שממשיכים להתנהג בדיוק אותו דבר בין אם המתג פעיל או כבוי.
+// מי שינה ומתי מתועד ב-AuditLog (entityType='AlertSettings'), לא
+// כאן — updatedAt נשאר רק לתצוגה נוחה במסך ההגדרות עצמו.
+// ------------------------------------------------------------
+
+model AlertSettings {
+  id                 String   @id @default(uuid())
+  emailAlertsEnabled Boolean  @default(true)
+  updatedAt          DateTime @updatedAt
+
+  @@map("alert_settings")
+}
+
+// ------------------------------------------------------------
 // NOTIFICATION — מתוכננת, לא ממומשת (שלב 10)
 // מוגדרת עכשיו כדי ש-Benefit לא יזדקק לשינוי מבני בעתיד
 // ------------------------------------------------------------
@@ -719,6 +775,13 @@ model ScrapedItem {
   // ולאפשר עיבוד מחדש אם לוגיקת המיפוי משתפרת בעתיד.
   rawData                Json
 
+  // עותק מאוחסן ב-R2 של rawData.imageUrl — מורד ומועלה בזמן אמת
+  // בזרימת הקליטה עצמה (processScrapedItem), לא ב-cron מאוחר יותר.
+  // null אם לפריט אין imageUrl, ההורדה נכשלה (URL שבור/timeout/404),
+  // או שהעיבוד עדיין לא רץ. לעולם לא חוסם את קליטת הפריט עצמו —
+  // ראו lib/r2Storage.downloadAndUploadImage.
+  r2ImageUrl             String?
+
   // Matching Engine: null = לא נמצאה הטבה קיימת (מועמדת לחדשה).
   // לא-null = נמצאה התאמה, זהו עדכון לרשומה קיימת.
   matchedBenefitId       String?
@@ -737,6 +800,21 @@ model ScrapedItem {
   benefitLastUpdatedFrom Benefit?          @relation("BenefitLastScrapedItem")
 
   scrapedAt              DateTime          @default(now())
+
+  // ---- modules/aiEnrichment: אימות תמונה / הצעת קטגוריה / סיכום עברי ----
+  // כל אחד רץ פעם אחת בחיי הרשומה (rawData לא משתנה אחרי היצירה,
+  // ScrapedItem הוא event log — ראו הערה למעלה). שלושת שדות ה-*At
+  // מסמנים "כבר נוסה" גם כשהתוצאה הייתה ריקה/שלילית (או כשאין בכלל
+  // מה לעבד — למשל תיאור ריק לסיכום) — בלי זה, סבב ה-cron הבא היה
+  // מנסה שוב על אותו קלט לנצח, בזבזני ובמקרה של aiSummary אף חוסם
+  // התקדמות לפריטים אחרים שכן ראויים לעיבוד. aiSummary *מתווסף* ליד
+  // rawData, לעולם לא דורס אותו — הטקסט הגולמי תמיד נשאר קריא במלואו.
+  aiSuggestedCategoryId  String?
+  aiSuggestedCategory    Category?         @relation("ScrapedItemAiSuggestedCategory", fields: [aiSuggestedCategoryId], references: [id])
+  aiCategorySuggestedAt  DateTime?
+  aiSummary              String?
+  aiSummaryGeneratedAt   DateTime?
+  aiImageCheckedAt       DateTime?
 
   // השאילתה החמה של מנוע ההתאמה: "המופע האחרון של הפריט הזה
   // במקור הזה". scrapedAt נכלל כדי שהמיון יישען על האינדקס.
