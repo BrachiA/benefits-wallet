@@ -1,10 +1,12 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { randomUUID } from 'crypto';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { AppError } from '../../lib/AppError';
 import { logger } from '../../lib/logger';
 import { recordAudit } from '../../lib/auditLog';
+import { downloadAndUploadImage } from '../../lib/r2Storage';
 import { benefitService } from '../benefit/benefit.service';
 import { scraperRepository } from './scraper.repository';
 import { robotsChecker } from './robotsChecker';
@@ -75,6 +77,38 @@ function resolveUrl(value: string | undefined, baseUrl: string): string | undefi
   } catch {
     return undefined;
   }
+}
+
+// מוריד ומעלה ל-R2 את תמונת הפריט עצמה, בזמן אמת בתוך זרימת הקליטה
+// (לא ב-cron מאוחר יותר) — ראו לב.r2Storage.downloadAndUploadImage.
+// לעולם לא זורק ולא חוסם את קליטת הפריט: undefined כשאין imageUrl
+// בכלל או כשההורדה נכשלה (URL שבור/timeout/404) — הפריט עדיין נכנס
+// למערכת כרגיל, פשוט בלי r2ImageUrl (ראו fallback ללוגו ברירת מחדל
+// ב-createBenefitFromScrapedItem). מפתח ה-R2 מבוסס UUID חדש ולא
+// scrapedItemId, כי בשלב הזה (לפני createItem) עוד אין id לפריט.
+async function downloadItemImage(imageUrl: string | undefined): Promise<string | undefined> {
+  if (!imageUrl) return undefined;
+  const result = await downloadAndUploadImage(imageUrl, `scraped-items/${randomUUID()}`);
+  return result.outcome === 'uploaded' ? result.publicUrl : undefined;
+}
+
+// נפילה חזרה ללוגו ברמת המועדון/מותג (חלק ג' של הנחיית המשימה) —
+// Program.defaultLogoUrl קודם ל-Brand.defaultLogoUrl (לא שרירותי:
+// BenefitScope בפועל כמעט תמיד ממלא רק אחד מהשניים דרך עוגן המקור
+// היחיד, וכשההטבה קשורה גם למועדון וגם למותג, הלוגו של המועדון —
+// לרוב כרטיס אשראי/מועדון עם זהות ויזואלית משלו — רלוונטי יותר
+// למשתמשת מזהות המותג הבודד שנמצא בתוכו). ריק אם אין עוגן, או שיש
+// עוגן אבל טרם נמצא/הוגדר לו לוגו ברירת מחדל בכלל.
+async function resolveDefaultLogoUrl(anchor: { defaultProgramId?: string | null; defaultBrandId?: string | null }): Promise<string | undefined> {
+  if (anchor.defaultProgramId) {
+    const program = await prisma.program.findUnique({ where: { id: anchor.defaultProgramId }, select: { defaultLogoUrl: true } });
+    if (program?.defaultLogoUrl) return program.defaultLogoUrl;
+  }
+  if (anchor.defaultBrandId) {
+    const brand = await prisma.brand.findUnique({ where: { id: anchor.defaultBrandId }, select: { defaultLogoUrl: true } });
+    if (brand?.defaultLogoUrl) return brand.defaultLogoUrl;
+  }
+  return undefined;
 }
 
 export const scraperService = {
@@ -251,6 +285,10 @@ export const scraperService = {
         }),
       });
       await scraperRepository.updateSource(sourceId, { lastRunAt: new Date(), lastRunStatus: status });
+      // מייל מרוכז אחד לכל הפריטים שסומנו בריצה הזו (ראו itemFlagged
+      // למעלה) — לא מייל נפרד לכל פריט. חייב לרוץ גם בנתיב הכשל
+      // למטה, אחרת buffer שהצטבר עד לרגע הכשל נשאר תקוע בזיכרון.
+      await scraperAlerts.flushFlaggedBatch({ runId: run.id, sourceName: source.name });
       return finished;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
@@ -267,6 +305,10 @@ export const scraperService = {
       logger.error({ sourceId, runId: run.id, err }, 'Scraper run failed');
       // סיבה 2 מתוך שלוש ההתראות שאושרו — ריצה שנכשלה בחריגה.
       await scraperAlerts.runFailed({ sourceName: source.name, errorMessage, runId: failed.id });
+      // גם כאן, לא רק בנתיב ההצלחה — ריצה שנכשלה באמצע יכולה עדיין
+      // להיות עם פריטים שכבר סומנו לפני הכשל, וה-buffer שלהם חייב
+      // להתרוקן (מייל + ניקוי זיכרון) גם כשהריצה כולה נכשלת.
+      await scraperAlerts.flushFlaggedBatch({ runId: run.id, sourceName: source.name });
 
       // נזרק ולא נבלע: קודם לכן הכשל הוחזר כתשובת 200 רגילה, והמנהל
       // קיבל מסך ירוק על ריצה שנכשלה. פרטי הריצה נשמרים ב-details
@@ -317,11 +359,17 @@ export const scraperService = {
     // יומית של פריט שלא טופל הייתה מוסיפה שורה לתור בכל יום.
     await scraperRepository.supersedePendingItems(sourceId, fields.externalId);
 
+    // הורדה+העלאה ל-R2 בזמן אמת, לפני יצירת שורת ScrapedItem — ראו
+    // הנחיית המשימה (חלק ב'): לא cron, לא תהליך נפרד. כשל כאן לא
+    // עוצר את קליטת הפריט (downloadItemImage לעולם לא זורק).
+    const r2ImageUrl = await downloadItemImage(fields.imageUrl);
+
     const item = await scraperRepository.createItem({
       source: { connect: { id: sourceId } },
       run: { connect: { id: runId } },
       externalId: fields.externalId,
       rawData: fields as never,
+      r2ImageUrl,
       confidenceScore: confidence.score,
       confidenceReasons: reasons,
       status: autoPublish ? 'AUTO_PUBLISHED' : 'PENDING_REVIEW',
@@ -330,25 +378,29 @@ export const scraperService = {
 
     if (autoPublish) {
       if (matchResult.kind === 'UPDATE') {
-        await this.applyUpdate(matchResult.benefitId, fields, item.id);
+        await this.applyUpdate(matchResult.benefitId, fields, item.id, r2ImageUrl);
         return 'UPDATED';
       }
       // NEW + autoPublish: אפשרי רק כש-autoScopeOk הוא true (ראו
       // shouldAutoPublish) — יש עוגן שיוך תקין, אז יוצרים את ההטבה
       // במלואה כולל BenefitScope, בלי אדם בלולאה.
-      const created = await this.createBenefitFromScrapedItem(source, fields, item.id);
+      const created = await this.createBenefitFromScrapedItem(source, fields, item.id, undefined, undefined, r2ImageUrl);
       await scraperRepository.updateItemStatus(item.id, { status: 'AUTO_PUBLISHED', matchedBenefitId: created.id });
       return 'CREATED';
     }
 
     // כל מה שנשאר: NEW בלי עוגן שיוך, או ציון מתחת לסף. סיבה 1
-    // מתוך שלוש ההתראות שאושרו — פריט שנכנס לתור הבדיקה.
+    // מתוך שלוש ההתראות שאושרו — פריט שנכנס לתור הבדיקה. itemFlagged
+    // לא שולחת מייל כאן ועכשיו — היא צוברת לפי runId, והקורא
+    // (runSource/extensionIngest.ingest) שולח מייל מרוכז אחד לריצה
+    // כולה בסופה, ראו scraperAlerts.flushFlaggedBatch.
     await scraperAlerts.itemFlagged({
       sourceName: source.name,
       title: fields.title,
       confidenceScore: confidence.score,
       confidenceReasons: reasons,
       scrapedItemId: item.id,
+      runId,
     });
     return 'FLAGGED';
   },
@@ -360,7 +412,17 @@ export const scraperService = {
     source: ScraperSourceAnchor,
     fields: RawScrapedFields,
     scrapedItemId: string,
-    categoryIdOverride?: string
+    categoryIdOverride?: string,
+    // שיוך per-request (למשל מהתוסף: מועדון/מותג שנבחר לריצה
+    // ספציפית, לא מוגדר קבוע על ה-ScraperSource עצמו). גובר על
+    // defaultProgramId/defaultBrandId של source כשקיים, בלי לגעת
+    // בקטגוריה (categoryIdOverride נשאר נפרד ומטופל למעלה).
+    anchorOverride?: { programId?: string; brandId?: string },
+    // עותק R2 שכבר הורד לפריט הסריקה עצמו (ScrapedItem.r2ImageUrl,
+    // ראו downloadItemImage) — undefined כשלפריט אין imageUrl או
+    // שההורדה נכשלה. במקרה הזה נופלים חזרה ללוגו ברירת המחדל של
+    // המועדון/מותג (חלק ג' של הנחיית המשימה), ראו למטה.
+    itemR2ImageUrl?: string
   ) {
     const categoryId = categoryIdOverride ?? source.defaultCategoryId;
     if (!categoryId) {
@@ -371,13 +433,27 @@ export const scraperService = {
       discountValue: fields.discountValue,
       categoryId,
     });
-    // scopeRow ריק (למקור אין defaultProgramId וגם לא defaultBrandId)
-    // אומר "אין ממה לגזור שיוך" — לא "שייך לכולם". יצירת שורת scope
-    // עם כל השדות null הייתה עושה בדיוק את הטעות ההפוכה, ולכן
-    // מדלגים על .create כשהוא ריק ומשאירים את ההטבה בלי scope (פער
-    // ידוע: המנהל משלים שיוך בעריכת ההטבה, ראו ScopeEditor).
-    const scopeRow = buildAutoScopeRow(source);
+    const effectiveAnchor: ScraperSourceAnchor = anchorOverride
+      ? {
+          ...source,
+          defaultProgramId: anchorOverride.programId ?? source.defaultProgramId,
+          defaultBrandId: anchorOverride.brandId ?? source.defaultBrandId,
+        }
+      : source;
+    // scopeRow ריק (אין defaultProgramId וגם לא defaultBrandId, לא
+    // מהמקור ולא מ-anchorOverride) אומר "אין ממה לגזור שיוך" — לא
+    // "שייך לכולם". יצירת שורת scope עם כל השדות null הייתה עושה
+    // בדיוק את הטעות ההפוכה, ולכן מדלגים על .create כשהוא ריק
+    // ומשאירים את ההטבה בלי scope (פער ידוע: המנהל משלים שיוך
+    // בעריכת ההטבה, ראו ScopeEditor).
+    const scopeRow = buildAutoScopeRow(effectiveAnchor);
     const hasScope = Object.keys(scopeRow).length > 0;
+
+    // r2ImageUrl הסופי של ההטבה: קודם התמונה של הפריט עצמו; אם
+    // אין (או שההורדה נכשלה), נפילה חזרה ללוגו ברירת המחדל של
+    // המועדון (עדיפות) ואז המותג ששיוכי ה-scope מצביעים אליהם —
+    // עדיף על להשאיר ריק לגמרי (חלק ג' של הנחיית המשימה).
+    const benefitR2ImageUrl = itemR2ImageUrl ?? (await resolveDefaultLogoUrl(effectiveAnchor));
 
     return prisma.benefit.create({
       data: {
@@ -388,6 +464,7 @@ export const scraperService = {
         benefitType: 'OTHER',
         discountValue: fields.discountValue,
         imageUrl: fields.imageUrl,
+        r2ImageUrl: benefitR2ImageUrl,
         valueScore,
         isActive: true,
         sourceMetadata: { title: { source: 'scraper', scrapedItemId } },
@@ -399,7 +476,11 @@ export const scraperService = {
 
   // מעדכן הטבה קיימת מתוצאת סריקה, כולל תיעוד sourceMetadata לכל
   // שדה שהשתנה — זו המימוש בפועל של "לדעת מאיפה כל שדה הגיע".
-  async applyUpdate(benefitId: string, fields: RawScrapedFields, scrapedItemId: string) {
+  // itemR2ImageUrl מגיע מ-ScrapedItem.r2ImageUrl של הפריט הזה (אם
+  // הורד בהצלחה) — מתעדכן על ה-Benefit רק כשיש עותק חדש בפועל, לא
+  // בכל עדכון: כשל הורדה חד-פעמי (URL שבור/timeout) לא אמור לאפס
+  // תמונה תקינה שכבר קיימת על ההטבה, ראו הנחיית המשימה חלק ב'.3.
+  async applyUpdate(benefitId: string, fields: RawScrapedFields, scrapedItemId: string, itemR2ImageUrl?: string) {
     const provenance = {
       source: 'scraper',
       scrapedItemId,
@@ -438,6 +519,7 @@ export const scraperService = {
         ...(fields.shortDescription !== undefined && { shortDescription: fields.shortDescription }),
         ...(fields.discountValue !== undefined && { discountValue: fields.discountValue }),
         ...(fields.imageUrl !== undefined && { imageUrl: fields.imageUrl }),
+        ...(itemR2ImageUrl !== undefined && { r2ImageUrl: itemR2ImageUrl }),
         ...(valueScore !== undefined && { valueScore }),
         sourceMetadata,
         lastScrapedItem: { connect: { id: scrapedItemId } },
@@ -568,7 +650,7 @@ export const scraperService = {
     const fields = { ...rawData, ...input.overrides };
 
     if (item.matchedBenefitId) {
-      await this.applyUpdate(item.matchedBenefitId, fields, item.id);
+      await this.applyUpdate(item.matchedBenefitId, fields, item.id, item.r2ImageUrl ?? undefined);
     } else {
       // אישור הטבה חדשה: יוצרים אותה בפועל כעת, לא בזמן הסריקה.
       // categoryId הוא חובה ב-Benefit — המנהל מספק אותו כ-override
@@ -576,13 +658,23 @@ export const scraperService = {
       const source = await this.getSourceById(item.sourceId);
       const categoryId = input.overrides?.categoryId ?? source.defaultCategoryId ?? undefined;
 
+      // שיוך per-request שהתוסף (או כל קריאת ingest עתידית אחרת)
+      // שמר על הפריט עצמו ב-rawData בזמן הסריקה — המקור המשותף
+      // (למשל __browser_extension_ingest__) עצמו נשאר בלי
+      // defaultProgramId/defaultBrandId קבועים, כך שהם צריכים
+      // להישחזר כאן, לא להיקרא מ-source. אצל פריטים "רגילים" משאר
+      // ScraperSource, השדות האלה פשוט לא קיימים ב-rawData — undefined
+      // ⇒ אין שינוי התנהגות.
+      const rawExtras = item.rawData as { programId?: string; brandId?: string } | null;
+      const anchorOverride = { programId: rawExtras?.programId, brandId: rawExtras?.brandId };
+
       // אותו נתיב יצירה שהמסלול האוטומטי משתמש בו — כולל חישוב
-      // valueScore, יצירת BenefitScope מעוגן המקור אם יש (ואם אין —
-      // בלי scope, והמנהל משלים שיוך בעריכת ההטבה, ראו ב.5.2),
-      // וקישור matchedBenefitId ולא רק lastScrapedItemId (שני
+      // valueScore, יצירת BenefitScope מעוגן המקור/anchorOverride אם
+      // יש (ואם אין — בלי scope, והמנהל משלים שיוך בעריכת ההטבה, ראו
+      // ב.5.2), וקישור matchedBenefitId ולא רק lastScrapedItemId (שני
       // relations נפרדים; בלעדי matchedBenefitId מנוע ההתאמה נופל
       // לחיפוש לפי slug בריצה הבאה ועלול ליצור הטבה כפולה).
-      const created = await this.createBenefitFromScrapedItem(source, fields, item.id, categoryId);
+      const created = await this.createBenefitFromScrapedItem(source, fields, item.id, categoryId, anchorOverride, item.r2ImageUrl ?? undefined);
 
       await scraperRepository.updateItemStatus(id, {
         status: 'APPROVED',

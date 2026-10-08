@@ -34,7 +34,7 @@ export const recommendationService = {
     // isNewOnly מסנן כאן, לפני הקיבוץ — כך קבוצה שכל ההטבות שלה
     // "לא חדשות" פשוט לא תופיע בתוצאה, ולא תישאר ריקה על המסך.
     const filtered = query.isNewOnly
-      ? benefits.filter((b) => isNewBenefit(b.createdAt, b.updatedAt))
+      ? benefits.filter((b) => isNewBenefit(b.startDate, b.createdAt))
       : benefits;
 
     const byGroup = new Map<BenefitGroupKey, typeof filtered>();
@@ -52,7 +52,7 @@ export const recommendationService = {
         label: GROUP_LABELS[key],
         benefits: sorted.slice(0, query.limitPerGroup).map((b) => ({
           ...b,
-          isNew: isNewBenefit(b.createdAt, b.updatedAt),
+          isNew: isNewBenefit(b.startDate, b.createdAt),
         })),
       };
     });

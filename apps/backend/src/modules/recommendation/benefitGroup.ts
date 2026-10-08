@@ -36,14 +36,18 @@ const NONCASH_TYPE_PRIORITY: Record<string, number> = {
   GIFT: 3,
 };
 
-// "חדש" הוא badge חוצה-קבוצות, לא סדר מיון: הטבה שנוצרה/עודכנה
-// בשבוע האחרון. הפילטר לפי "חדש" מופעל בנפרד ע"י הקליינט
-// (isNewOnly), לא משנה את סדר ברירת המחדל כאן.
+// "חדש" הוא badge חוצה-קבוצות, לא סדר מיון: הטבה שנכנסה לתוקף
+// (startDate) בשבוע האחרון — לא הטבה שרק נוצרה/עודכנה במערכת.
+// startDate הוא אופציונלי (הטבה יכולה להיות תקפה בלי תאריך התחלה
+// מפורש), ואז createdAt הוא הגיבוי היחיד שיש לנו ל"מתי היא בעצם
+// הופיעה". הפילטר לפי "חדש" מופעל בנפרד ע"י הקליינט (isNewOnly),
+// לא משנה את סדר ברירת המחדל כאן.
 const NEW_THRESHOLD_DAYS = 7;
 
-export function isNewBenefit(createdAt: Date, updatedAt: Date): boolean {
+export function isNewBenefit(startDate: Date | null, createdAt: Date): boolean {
   const cutoff = Date.now() - NEW_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
-  return createdAt.getTime() >= cutoff || updatedAt.getTime() >= cutoff;
+  const effectiveDate = startDate ?? createdAt;
+  return effectiveDate.getTime() >= cutoff;
 }
 
 type SortableBenefit = {

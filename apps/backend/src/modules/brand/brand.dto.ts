@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const logoModeEnum = z.enum(['AUTO', 'MANUAL']);
+
 export const createBrandSchema = z.object({
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/),
   name: z.string().min(1).max(150),
@@ -16,6 +18,8 @@ export const createBrandSchema = z.object({
   searchKeywords: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
   sortOrder: z.number().int().default(0),
+  // ראו הערה מקבילה ב-program.dto.ts — אותה זרימת toggle אוטומטי/ידני.
+  logoMode: logoModeEnum.optional(),
 });
 
 export const updateBrandSchema = createBrandSchema.partial();

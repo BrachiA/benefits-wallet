@@ -10,6 +10,7 @@ import {
   reviewTosSchema,
   updateScraperSourceSchema,
 } from './scraper.dto';
+import { ingestExtensionSchema } from './extensionIngest.dto';
 
 export const scraperRouter = Router();
 
@@ -35,3 +36,9 @@ scraperRouter.post('/sources/:id/run', scraperController.runSource);
 scraperRouter.get('/items', validateRequest(listScrapedItemsQuerySchema, 'query'), scraperController.listItems);
 scraperRouter.get('/items/:id', scraperController.getItemById);
 scraperRouter.post('/items/:id/review', validateRequest(reviewScrapedItemSchema), scraperController.reviewItem);
+
+// תוסף Chrome לניהול (apps/admin-extension): נתיב ומזהה מקור נפרדים
+// מ-ScraperSource הרגיל — לא "עוד sourceType", ראו extensionIngest.service.ts.
+// מוגן ע"י requireAdminAuth למעלה, אותו מנגנון בדיוק (cookie או
+// Authorization: Bearer <token> — ראו requireAdminAuth.extractToken).
+scraperRouter.post('/ingest-extension', validateRequest(ingestExtensionSchema), scraperController.ingestExtension);

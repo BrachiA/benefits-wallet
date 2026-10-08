@@ -20,6 +20,9 @@ import { tagRouter } from './modules/tag/tag.routes';
 import { scraperRouter } from './modules/scraper/scraper.routes';
 import { searchRouter } from './modules/search/search.routes';
 import { recommendationRouter } from './modules/recommendation/recommendation.routes';
+import { settingsRouter } from './modules/settings/settings.routes';
+import { duplicateCleanupRouter } from './modules/duplicateCleanup/duplicateCleanup.routes';
+import { aiEnrichmentRouter } from './modules/aiEnrichment/aiEnrichment.routes';
 
 // app.ts מרכיב את Express בלבד ולא קורא ל-listen() — server.ts הוא
 // היחיד שעושה זאת. ההפרדה הזו קריטית לבדיקות: אפשר לייבא { app }
@@ -62,6 +65,9 @@ v1.use('/tags', tagRouter);
 v1.use('/scraper', scraperRouter);
 v1.use('/search', searchRouter);
 v1.use('/recommendations', recommendationRouter);
+v1.use('/settings', settingsRouter);
+v1.use('/duplicate-cleanup', duplicateCleanupRouter);
+v1.use('/ai-enrichment', aiEnrichmentRouter);
 
 app.use('/api/v1', v1);
 

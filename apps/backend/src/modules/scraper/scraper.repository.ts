@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
+import { EXTENSION_ANCHOR_SLUG } from './extensionIngest.dto';
 import type { ListScraperSourcesQuery, ListScrapedItemsQuery } from './scraper.dto';
 
 export const scraperRepository = {
@@ -8,6 +9,10 @@ export const scraperRepository = {
   async findSources(query: ListScraperSourcesQuery, skip: number, take: number) {
     const where: Prisma.ScraperSourceWhereInput = {
       deletedAt: null,
+      // עוגן ה-FK הטכני של תוסף Chrome (extensionIngest.service) אינו
+      // "מקור סריקה" מבחינת הדשבורד — אין לו scrapeConfig אמיתי, אין
+      // טעם לאשר לו ToS או להפעילו דרך המסכים האלה. מוסתר מכל רשימה.
+      slug: { not: EXTENSION_ANCHOR_SLUG },
       ...(query.isActive !== undefined && { isActive: query.isActive }),
       ...(query.tosStatus && { tosStatus: query.tosStatus }),
     };
@@ -117,7 +122,7 @@ export const scraperRepository = {
   async findItemById(id: string) {
     return prisma.scrapedItem.findUnique({
       where: { id },
-      include: { source: true, matchedBenefit: true, run: true },
+      include: { source: true, matchedBenefit: true, run: true, aiSuggestedCategory: true },
     });
   },
 

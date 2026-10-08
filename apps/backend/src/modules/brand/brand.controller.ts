@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { brandService } from './brand.service';
 import { sendPaginated, sendSuccess, parsePagination } from '../../lib/apiResponse';
+import { AppError } from '../../lib/AppError';
 import type { CreateBrandInput, ListBrandsQuery, UpdateBrandInput } from './brand.dto';
 
 export const brandController = {
@@ -43,6 +44,16 @@ export const brandController = {
     try {
       await brandService.remove(req.params.id);
       return res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async uploadLogo(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.file) throw AppError.validation('קובץ תמונה חסר (שדה "file")');
+      const updated = await brandService.uploadManualLogo(req.params.id, req.file.buffer, req.file.mimetype);
+      return sendSuccess(res, updated);
     } catch (err) {
       next(err);
     }

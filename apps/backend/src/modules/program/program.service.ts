@@ -1,6 +1,8 @@
+import { randomUUID } from 'crypto';
 import { AppError } from '../../lib/AppError';
 import { cache } from '../../lib/cache';
 import { recordAudit } from '../../lib/auditLog';
+import { uploadImageBuffer } from '../../lib/r2Storage';
 import { programRepository } from './program.repository';
 import type { CreateProgramInput, ListProgramsQuery, UpdateProgramInput } from './program.dto';
 
@@ -55,9 +57,38 @@ export const programService = {
       ...(parentProgramId !== undefined && {
         parentProgram: parentProgramId ? { connect: { id: parentProgramId } } : { disconnect: true },
       }),
+      // חזרה למצב אוטומטי מאפסת defaultLogoUrl/logoSearchedAt כדי
+      // שסבב חיפוש הלוגו הבא (modules/logoSearch) יחפש מחדש במקום
+      // להישאר תקוע לצמיתות עם התמונה שהייתה קיימת לפני המעבר ל-
+      // MANUAL. החלטת עיצוב מתועדת בדוח הסיום (המנהלת עלולה לראות
+      // רגעית "בלי לוגו" עד סבב ה-cron הבא).
+      ...(input.logoMode === 'AUTO' && existing.logoMode !== 'AUTO' && { defaultLogoUrl: null, logoSearchedAt: null }),
     } as never);
     await cache.del(`${CACHE_KEY_PREFIX}all`);
     await recordAudit({ entityType: 'Program', entityId: id, action: 'UPDATE', changedFields: input });
+    return program;
+  },
+
+  // העלאה ידנית של לוגו (חלק ד' — לא חיפוש AI): מנהלת בוחרת קובץ
+  // בעצמה. מעביר את המועדון ל-MANUAL כתופעת לוואי מכוונת של ההעלאה
+  // עצמה — כדי שסבב חיפוש הלוגו הבא (modules/logoSearch, מסנן
+  // logoMode:'AUTO' בלבד) לא ידרוס אותה בטעות. logoSearchedAt מתעדכן
+  // גם הוא, לתיעוד בלבד (הסינון האמיתי הוא logoMode, לא השדה הזה).
+  async uploadManualLogo(id: string, buffer: Buffer, mimeType: string) {
+    await this.getById(id);
+    const publicUrl = await uploadImageBuffer(buffer, `logos/program/manual/${id}-${randomUUID()}`, mimeType);
+    const program = await programRepository.update(id, {
+      defaultLogoUrl: publicUrl,
+      logoMode: 'MANUAL',
+      logoSearchedAt: new Date(),
+    });
+    await cache.del(`${CACHE_KEY_PREFIX}all`);
+    await recordAudit({
+      entityType: 'Program',
+      entityId: id,
+      action: 'UPDATE',
+      changedFields: { defaultLogoUrl: publicUrl, logoMode: 'MANUAL', uploadedManually: true },
+    });
     return program;
   },
 

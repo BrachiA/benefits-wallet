@@ -26,13 +26,18 @@ authRouter.post('/login', validateRequest(loginSchema), (req, res) => {
     return;
   }
 
-  res.cookie(SESSION_COOKIE_NAME, createSessionToken(), {
+  const token = createSessionToken();
+  res.cookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     maxAge: COOKIE_MAX_AGE_MS,
   });
-  res.json({ success: true, data: { authenticated: true } });
+  // token מוחזר גם בגוף התשובה (בנוסף לעוגייה): הדשבורד מתעלם ממנו
+  // ומסתמך על העוגייה כרגיל, אבל לקוח שלא יכול לסמוך על צירוף cookie
+  // אוטומטי חוצה-אתרים (תוסף Chrome) שומר אותו ושולח כ-Authorization:
+  // Bearer בכל בקשה — ראו requireAdminAuth.extractToken.
+  res.json({ success: true, data: { authenticated: true, token } });
 });
 
 authRouter.post('/logout', (_req, res) => {

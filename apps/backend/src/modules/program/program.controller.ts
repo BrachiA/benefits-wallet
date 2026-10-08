@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { programService } from './program.service';
 import { sendPaginated, sendSuccess, parsePagination } from '../../lib/apiResponse';
+import { AppError } from '../../lib/AppError';
 import type { CreateProgramInput, ListProgramsQuery, UpdateProgramInput } from './program.dto';
 
 export const programController = {
@@ -45,6 +46,16 @@ export const programController = {
     try {
       await programService.remove(req.params.id);
       return res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async uploadLogo(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.file) throw AppError.validation('קובץ תמונה חסר (שדה "file")');
+      const updated = await programService.uploadManualLogo(req.params.id, req.file.buffer, req.file.mimetype);
+      return sendSuccess(res, updated);
     } catch (err) {
       next(err);
     }

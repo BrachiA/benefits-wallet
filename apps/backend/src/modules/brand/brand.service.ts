@@ -1,5 +1,7 @@
+import { randomUUID } from 'crypto';
 import { AppError } from '../../lib/AppError';
 import { recordAudit } from '../../lib/auditLog';
+import { uploadImageBuffer } from '../../lib/r2Storage';
 import { brandRepository } from './brand.repository';
 import type { CreateBrandInput, ListBrandsQuery, UpdateBrandInput } from './brand.dto';
 
@@ -27,7 +29,7 @@ export const brandService = {
   },
 
   async update(id: string, input: UpdateBrandInput) {
-    await this.getById(id);
+    const existing = await this.getById(id);
     const { categoryId, parentBrandId, ...rest } = input;
     const brand = await brandRepository.update(id, {
       ...rest,
@@ -35,8 +37,29 @@ export const brandService = {
       ...(parentBrandId !== undefined && {
         parentBrand: parentBrandId ? { connect: { id: parentBrandId } } : { disconnect: true },
       }),
+      // ראו הערה מקבילה ב-program.service.update — אותה זרימת חזרה
+      // ל-AUTO מאפסת defaultLogoUrl/logoSearchedAt לחיפוש מחדש.
+      ...(input.logoMode === 'AUTO' && existing.logoMode !== 'AUTO' && { defaultLogoUrl: null, logoSearchedAt: null }),
     });
     await recordAudit({ entityType: 'Brand', entityId: id, action: 'UPDATE', changedFields: input });
+    return brand;
+  },
+
+  // ראו הערה מקבילה ב-program.service.uploadManualLogo.
+  async uploadManualLogo(id: string, buffer: Buffer, mimeType: string) {
+    await this.getById(id);
+    const publicUrl = await uploadImageBuffer(buffer, `logos/brand/manual/${id}-${randomUUID()}`, mimeType);
+    const brand = await brandRepository.update(id, {
+      defaultLogoUrl: publicUrl,
+      logoMode: 'MANUAL',
+      logoSearchedAt: new Date(),
+    });
+    await recordAudit({
+      entityType: 'Brand',
+      entityId: id,
+      action: 'UPDATE',
+      changedFields: { defaultLogoUrl: publicUrl, logoMode: 'MANUAL', uploadedManually: true },
+    });
     return brand;
   },
 

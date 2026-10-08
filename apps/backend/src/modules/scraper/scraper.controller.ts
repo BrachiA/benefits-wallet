@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { scraperService } from './scraper.service';
-import { sendPaginated, sendSuccess, parsePagination } from '../../lib/apiResponse';
+import { extensionIngestService } from './extensionIngest.service';
+import { sendSuccess, sendPaginated, parsePagination } from '../../lib/apiResponse';
 import type {
   CreateScraperSourceInput,
   ListScraperSourcesQuery,
@@ -9,6 +10,7 @@ import type {
   ReviewTosInput,
   UpdateScraperSourceInput,
 } from './scraper.dto';
+import type { IngestExtensionInput } from './extensionIngest.dto';
 
 export const scraperController = {
   // ---------- ScraperSource ----------
@@ -116,6 +118,16 @@ export const scraperController = {
   async reviewItem(req: Request, res: Response, next: NextFunction) {
     try {
       return sendSuccess(res, await scraperService.reviewItem(req.params.id, req.body as ReviewScrapedItemInput));
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // ---------- תוסף Chrome: קלט ידני מה-DOM (נתיב נפרד מ-ScraperSource) ----------
+
+  async ingestExtension(req: Request, res: Response, next: NextFunction) {
+    try {
+      return sendSuccess(res, await extensionIngestService.ingest(req.body as IngestExtensionInput));
     } catch (err) {
       next(err);
     }

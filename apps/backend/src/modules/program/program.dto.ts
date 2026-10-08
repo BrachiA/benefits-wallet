@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const programTypeEnum = z.enum(['CREDIT_CARD', 'CUSTOMER_CLUB', 'EMPLOYEE_CLUB', 'RETAILER_CLUB', 'OTHER']);
+export const logoModeEnum = z.enum(['AUTO', 'MANUAL']);
 
 export const createProgramSchema = z.object({
   issuerId: z.string().uuid(),
@@ -20,6 +21,12 @@ export const createProgramSchema = z.object({
   isActive: z.boolean().default(true),
   isPopular: z.boolean().default(false),
   sortOrder: z.number().int().default(0),
+  // ה-toggle "לוגו אוטומטי/ידני" (חלק ד' של משימת אחסון התמונות).
+  // defaultLogoUrl עצמו *לא* נחשף כאן בכוונה — הוא מוגדר רק דרך
+  // סבב החיפוש האוטומטי (modules/logoSearch) או POST /:id/logo
+  // (העלאה ידנית, program.controller.uploadLogo), לא כטקסט חופשי
+  // ב-PATCH רגיל.
+  logoMode: logoModeEnum.optional(),
 });
 
 export const updateProgramSchema = createProgramSchema.partial();
