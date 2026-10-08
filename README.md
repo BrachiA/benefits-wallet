@@ -11,6 +11,10 @@
 ![React Native](https://img.shields.io/badge/React_Native-Expo_54-000020?logo=expo&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-136_passing-brightgreen)
 
+<div align="center">
+
+עברית · [English](README.en.md)
+
 </div>
 
 <!--
