@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <title>ארנק ההטבות – סריקת מנהל</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="popup">
+      <header class="popup__header">
+        <h1>🧩 סריקת הטבות מהעמוד הנוכחי</h1>
+        <p class="hint">התוסף רץ רק כשלוחצים על הכפתור למטה. שום דבר לא מתוזמן ולא רץ ברקע.</p>
+      </header>
+
+      <label class="field">
+        <span>כתובת Backend</span>
+        <input id="backendUrl" type="text" placeholder="http://localhost:4000" autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span>מפתח אימות (טוקן)</span>
+        <input id="token" type="password" placeholder="הדביקי טוקן, או קבלי אחד למטה" autocomplete="off" />
+      </label>
+
+      <details class="login-helper">
+        <summary>אין טוקן? התחברי עם סיסמת הדשבורד</summary>
+        <label class="field">
+          <span>סיסמת דשבורד</span>
+          <input id="loginPassword" type="password" placeholder="אותה סיסמה כמו בדשבורד" autocomplete="off" />
+        </label>
+        <button id="loginButton" type="button" class="btn btn--secondary">התחברי וקבלי טוקן</button>
+        <p class="hint hint--small">הסיסמה עצמה לא נשמרת בתוסף — רק הטוקן שמתקבל בתגובה.</p>
+      </details>
+
+      <label class="field">
+        <span>שיוך מועדון/מותג לריצה הזו (אופציונלי)</span>
+        <select id="anchorSelect">
+          <option value="">— בלי שיוך —</option>
+        </select>
+        <p class="hint hint--small">
+          אם העמוד הזה שייך למועדון/כרטיס או למותג ספציפי — בחרו אותו כאן, וכל ההטבות שייסרקו עכשיו יקבלו את השיוך הזה
+          מראש (עדיין יידרש למלא קטגוריה לכל הטבה בתור הבדיקה). בלי בחירה, ההתנהגות נשארת כמו היום — בלי שיוך.
+        </p>
+      </label>
+
+      <button id="scanButton" type="button" class="btn btn--primary">סרוק עמוד נוכחי והעבר לבקאנד</button>
+
+      <div id="status" class="status status--idle" role="status">מוכנה לסריקה</div>
+      <pre id="summary" class="summary"></pre>
+
+      <button id="cleanupButton" type="button" class="btn btn--secondary">הפעילי ניקוי כפילויות עכשיו</button>
+      <p class="hint hint--small">
+        מריצה מיד ניקוי AI של ריצות סריקה יתומות וכפילויות בין ריצות (רץ גם אוטומטית כל שעה) — לא קשור לסריקה
+        למעלה, אפשר ללחוץ בכל זמן.
+      </p>
+      <div id="cleanupStatus" class="hint hint--small"></div>
+
+      <button id="categorizeButton" type="button" class="btn btn--secondary">הפעילי קטגוריזציה עכשיו</button>
+      <p class="hint hint--small">
+        מריצה מיד הצעת קטגוריה ע"י AI לפריטים בלי קטגוריה (רץ גם אוטומטית כל שעה) — שימושי מיד אחרי סריקה, כדי
+        שלא תצטרכו לחכות לסבב הבא.
+      </p>
+      <div id="categorizeStatus" class="hint hint--small"></div>
+    </div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

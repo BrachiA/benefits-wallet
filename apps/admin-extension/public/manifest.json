@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "ארנק ההטבות – סריקת מנהל",
+  "short_name": "סריקת הטבות",
+  "version": "1.0.0",
+  "description": "כלי פנימי למנהלת התוכן: סריקת עמוד הטבות פתוח בדפדפן והעברתו לתור הבדיקה בבקאנד. הרצה ידנית בלחיצת כפתור בלבד — אין תזמון ואין הפעלה אוטומטית.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "סריקת הטבות – ארנק ההטבות"
+  },
+  "permissions": ["storage", "activeTab", "scripting"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"]
+}

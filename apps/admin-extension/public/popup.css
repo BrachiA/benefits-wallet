@@ -1,0 +1,164 @@
+:root {
+  --purple: #6b46c1;
+  --lilac: #9f7aea;
+  --text: #1a1a2e;
+  --muted: #6b7280;
+  --border: #e2e0f0;
+  --bg: #ffffff;
+  --danger-bg: #fdeaea;
+  --danger-text: #b3261e;
+  --success-bg: #e8f6ee;
+  --success-text: #1e7a45;
+  --busy-bg: #eef0fb;
+  --busy-text: #3f4a8a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.popup {
+  width: 320px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.popup__header h1 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.hint--small {
+  margin-top: 4px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.field input,
+.field select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--text);
+}
+
+.field input:focus,
+.field select:focus {
+  outline: 2px solid var(--lilac);
+  outline-offset: 1px;
+}
+
+.login-helper {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.login-helper summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--purple);
+}
+
+.login-helper .field {
+  margin-top: 8px;
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn--primary {
+  background: var(--purple);
+  color: #fff;
+}
+
+.btn--primary:hover {
+  background: #5b3aa8;
+}
+
+.btn--secondary {
+  background: #f3f1fb;
+  color: var(--purple);
+  width: 100%;
+  margin-top: 4px;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.status {
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.status--idle {
+  background: #f4f4f8;
+  color: var(--muted);
+}
+
+.status--scanning,
+.status--sending {
+  background: var(--busy-bg);
+  color: var(--busy-text);
+}
+
+.status--success {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.status--error {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.summary {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: #f9f9fc;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 0;
+  min-height: 0;
+}
+
+.summary:empty {
+  display: none;
+}
