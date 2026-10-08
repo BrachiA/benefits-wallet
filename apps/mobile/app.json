@@ -4,11 +4,19 @@
     "slug": "benefits-wallet",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0E1020",
+    "icon": "./assets/icon.png",
     "assetBundlePatterns": ["**/*"],
     "ios": { "supportsTablet": false },
     "android": {
-      "adaptiveIcon": { "backgroundColor": "#F7F7FB" }
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#185FA5"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
     },
     "extra": {
       "eas": {}

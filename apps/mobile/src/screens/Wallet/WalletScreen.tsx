@@ -93,5 +93,6 @@ const styles = StyleSheet.create({
     minHeight: theme.minTouchTarget,
     justifyContent: 'center',
   },
-  addButtonText: { color: theme.colors.textOnPrimary, fontWeight: '600', fontSize: theme.fontSize.md },
+  // ראו הערת textOnAccent ב-theme.ts — לבן על purple נכשל ב-AA.
+  addButtonText: { color: theme.colors.textOnAccent, fontWeight: '700', fontSize: theme.fontSize.md },
 });

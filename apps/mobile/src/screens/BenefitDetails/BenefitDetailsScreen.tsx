@@ -124,7 +124,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: theme.spacing.md,
   },
-  discountBannerText: { color: theme.colors.textOnPrimary, fontSize: theme.fontSize.lg, fontWeight: '700' },
+  // באנר ההנחה על רקע purple בהיר — ראו הערת textOnAccent ב-theme.ts.
+  discountBannerText: { color: theme.colors.textOnAccent, fontSize: theme.fontSize.lg, fontWeight: '800' },
   urgencyBadge: {
     backgroundColor: theme.colors.warningBg,
     borderRadius: theme.radius.pill,
@@ -157,7 +158,7 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
     marginTop: theme.spacing.md,
   },
-  couponNoticeText: { fontSize: theme.fontSize.sm, color: theme.colors.purpleDark, textAlign: 'right' },
+  couponNoticeText: { fontSize: theme.fontSize.sm, color: theme.colors.lilac, textAlign: 'right' },
   tagsRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: theme.spacing.xs, marginTop: theme.spacing.md },
   tag: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
   tagText: { fontSize: theme.fontSize.xs, color: theme.colors.textSecondary },

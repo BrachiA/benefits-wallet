@@ -87,7 +87,9 @@ const styles = StyleSheet.create({
   },
   newFilterChipActive: { backgroundColor: theme.colors.purple, borderColor: theme.colors.purple },
   newFilterText: { fontSize: theme.fontSize.sm, color: theme.colors.textPrimary, fontWeight: '500' },
-  newFilterTextActive: { color: theme.colors.textOnPrimary },
+  // רקע הצ'יפ הפעיל הוא purple הבהיר — טקסט לבן עליו נותן 2.64:1
+  // ונכשל ב-AA. ראו הערת textOnAccent ב-theme.ts.
+  newFilterTextActive: { color: theme.colors.textOnAccent },
   section: { marginBottom: theme.spacing.lg },
   sectionHeader: {
     flexDirection: 'row-reverse',

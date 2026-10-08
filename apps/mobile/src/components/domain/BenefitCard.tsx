@@ -9,7 +9,7 @@ type BenefitCardProps = {
   onToggleFavorite?: () => void;
 };
 
-function formatDiscount(benefit: Benefit): string | null {
+export function formatDiscount(benefit: Benefit): string | null {
   if (benefit.discountValue == null) return null;
   if (benefit.discountUnit === 'PERCENT') return `${benefit.discountValue}%`;
   if (benefit.discountUnit === 'ILS') return `₪${benefit.discountValue}`;
@@ -133,7 +133,8 @@ const styles = StyleSheet.create({
   },
   categoryText: {
     fontSize: theme.fontSize.xs,
-    color: theme.colors.purpleDark,
+    // lilac ולא purpleDark: על משטח כהה הסגול הכהה יורד מתחת ל-AA.
+    color: theme.colors.lilac,
     fontWeight: '500',
   },
   discountBadge: {
@@ -145,8 +146,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   discountText: {
-    color: theme.colors.textOnPrimary,
-    fontWeight: '700',
+    // טקסט כהה על סגול בהיר — לבן על הסגול הזה נותן 2.64:1 בלבד
+    // ונכשל ב-AA. ראו הערת textOnAccent ב-theme.ts.
+    color: theme.colors.textOnAccent,
+    fontWeight: '800',
     fontSize: theme.fontSize.sm,
   },
 });

@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { Text } from 'react-native';
+import { DarkTheme, NavigationContainer, type Theme as NavTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { theme } from '../theme/theme';
@@ -50,6 +51,11 @@ function HomeStackScreen() {
           <HomeScreen
             onOpenBenefit={(benefit) => navigation.navigate('Details', { benefit })}
             onOpenCategory={(categoryId, categoryName) => navigation.navigate('Category', { categoryId, categoryName })}
+            onOpenProgram={(program) => navigation.navigate('Program', { program })}
+            // בית וחיפוש הם שני טאבים נפרדים — קפיצה מבית לתוצאה
+            // "פותחת" את טאב החיפוש עצמו (getParent) במקום לשכפל את
+            // כל מסך החיפוש בתוך ה-Stack של הבית.
+            onOpenSearch={() => navigation.getParent()?.navigate('SearchTab')}
           />
         )}
       </HomeStack.Screen>
@@ -58,6 +64,15 @@ function HomeStackScreen() {
           <BenefitsListScreen
             categoryId={route.params.categoryId}
             categoryName={route.params.categoryName}
+            onOpenBenefit={(benefit) => navigation.navigate('Details', { benefit })}
+          />
+        )}
+      </HomeStack.Screen>
+      <HomeStack.Screen name="Program">
+        {({ route, navigation }) => (
+          <BenefitsListScreen
+            programId={route.params.program.id}
+            programName={route.params.program.name}
             onOpenBenefit={(benefit) => navigation.navigate('Details', { benefit })}
           />
         )}
@@ -180,6 +195,16 @@ function ProfileStackScreen({ onGoToOnboarding }: { onGoToOnboarding: () => void
 // עם 5 טאבים (Home/Wallet/Search/Favorites/Profile) כבר יש כניסה
 // לקטגוריות דרך Home ודרך Search. זו החלטת UX מודעת, לא השמטה —
 // טאב שישי ניתן להוספה בקלות אם שימוש אמיתי יראה שצריך.
+// אייקון טאב כאמוג'י, לא ספריית אייקונים: הוספת @expo/vector-icons
+// עבור חמישה אייקונים בלבד מוסיפה חבילת פונטים שלמה ל-bundle. גודל
+// 22 ואטימות מלאה/חלקית מבדילים בין פעיל ללא-פעיל, בנוסף לצבע
+// התווית — לא הסתמכות על צבע בלבד (WCAG 1.4.1).
+function tabIcon(emoji: string) {
+  return ({ focused }: { focused: boolean }) => (
+    <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.55 }}>{emoji}</Text>
+  );
+}
+
 function TabsScreen({ onGoToOnboarding }: { onGoToOnboarding: () => void }) {
   return (
     <Tabs.Navigator
@@ -187,26 +212,49 @@ function TabsScreen({ onGoToOnboarding }: { onGoToOnboarding: () => void }) {
         headerShown: false,
         tabBarActiveTintColor: theme.colors.purple,
         tabBarInactiveTintColor: theme.colors.textMuted,
+        // סרגל כהה שמתמזג עם הרקע, עם גבול עדין להפרדה. הגובה
+        // וה-padding נשארים ברירת המחדל של הניווט, שכבר מכבדת את
+        // אזור הבטח התחתון (מחוות הבית) דרך SafeAreaProvider.
+        tabBarStyle: {
+          backgroundColor: theme.colors.surface,
+          borderTopColor: theme.colors.border,
+          borderTopWidth: 1,
+        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
       }}
     >
-      <Tabs.Screen name="HomeTab" options={{ tabBarLabel: 'בית' }}>
+      <Tabs.Screen name="HomeTab" options={{ tabBarLabel: 'בית', tabBarIcon: tabIcon('🏠') }}>
         {() => <HomeStackScreen />}
       </Tabs.Screen>
-      <Tabs.Screen name="WalletTab" options={{ tabBarLabel: 'ארנק' }}>
+      <Tabs.Screen name="WalletTab" options={{ tabBarLabel: 'ארנק', tabBarIcon: tabIcon('💳') }}>
         {() => <WalletStackScreen onGoToOnboarding={onGoToOnboarding} />}
       </Tabs.Screen>
-      <Tabs.Screen name="SearchTab" options={{ tabBarLabel: 'חיפוש' }}>
+      <Tabs.Screen name="SearchTab" options={{ tabBarLabel: 'חיפוש', tabBarIcon: tabIcon('🔍') }}>
         {() => <SearchStackScreen />}
       </Tabs.Screen>
-      <Tabs.Screen name="FavoritesTab" options={{ tabBarLabel: 'מועדפים' }}>
+      <Tabs.Screen name="FavoritesTab" options={{ tabBarLabel: 'מועדפים', tabBarIcon: tabIcon('❤️') }}>
         {() => <FavoritesStackScreen />}
       </Tabs.Screen>
-      <Tabs.Screen name="ProfileTab" options={{ tabBarLabel: 'שלי' }}>
+      <Tabs.Screen name="ProfileTab" options={{ tabBarLabel: 'שלי', tabBarIcon: tabIcon('👤') }}>
         {() => <ProfileStackScreen onGoToOnboarding={onGoToOnboarding} />}
       </Tabs.Screen>
     </Tabs.Navigator>
   );
 }
+
+// ערכת הניווט קובעת את צבע הרקע *שמאחורי* המסכים — בלעדיה, המעבר
+// בין מסכים מהבהב בלבן על ערכה כהה.
+const navigationTheme: NavTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: theme.colors.background,
+    card: theme.colors.surface,
+    text: theme.colors.textPrimary,
+    border: theme.colors.border,
+    primary: theme.colors.purple,
+  },
+};
 
 type RootState = 'splash' | 'onboarding' | 'main';
 
@@ -229,7 +277,7 @@ export function RootNavigator() {
   if (state === 'onboarding') return <OnboardingScreen onDone={handleOnboardingDone} />;
 
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navigationTheme}>
       <TabsScreen onGoToOnboarding={handleGoToOnboarding} />
     </NavigationContainer>
   );

@@ -8,6 +8,10 @@ type UseBenefitsOptions = {
   categoryId?: string;
   isPopular?: boolean;
   search?: string;
+  // מיפוי ישיר לפרמטר sortBy הקיים כבר ב-backend (ListBenefitsQuery) —
+  // לא לוגיקה חדשה, רק חשיפה שלו דרך ה-hook. משמש ל"הטבות חדשות"
+  // בעמוד הבית, שצריך את ההטבות הכי טריות כדי לסנן isNewBenefit עליהן.
+  sortBy?: 'priority' | 'valueScore' | 'createdAt';
   // מצמצם לכרטיס/מועדון בודד — משמש כשמגיעים מ-WalletScreen ("מה
   // מגיע לי עם הכרטיס הזה"), בשונה מהסינון הרגיל שמבוסס על כל
   // הבחירה השמורה ב-storage.
@@ -38,13 +42,14 @@ export function useBenefits(options: UseBenefitsOptions = {}) {
   }, [options.singleProgramId, options.skip]);
 
   return useQuery({
-    queryKey: ['benefits', storedProgramIds, options.categoryId, options.isPopular, options.search],
+    queryKey: ['benefits', storedProgramIds, options.categoryId, options.isPopular, options.search, options.sortBy],
     queryFn: () => {
       const params = new URLSearchParams();
       if (storedProgramIds?.length) params.set('programIds', storedProgramIds.join(','));
       if (options.categoryId) params.set('categoryId', options.categoryId);
       if (options.isPopular !== undefined) params.set('isPopular', String(options.isPopular));
       if (options.search) params.set('search', options.search);
+      if (options.sortBy) params.set('sortBy', options.sortBy);
       params.set('pageSize', '50');
       return apiClient.get<Benefit[]>(`/benefits?${params.toString()}`);
     },

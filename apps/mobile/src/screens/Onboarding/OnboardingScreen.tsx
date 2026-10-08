@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     marginLeft: theme.spacing.sm,
   },
   checkboxChecked: { borderColor: theme.colors.purple, backgroundColor: theme.colors.purple },
-  checkmark: { color: theme.colors.textOnPrimary, fontSize: 14, fontWeight: '700' },
+  checkmark: { color: theme.colors.textOnAccent, fontSize: 14, fontWeight: '800' },
   rowLabel: { fontSize: theme.fontSize.md, color: theme.colors.textPrimary, flex: 1, textAlign: 'right' },
   footer: {
     position: 'absolute',
@@ -139,5 +139,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   doneButtonDisabled: { backgroundColor: theme.colors.border },
-  doneButtonText: { color: theme.colors.textOnPrimary, fontSize: theme.fontSize.md, fontWeight: '600' },
+  // ראו הערת textOnAccent ב-theme.ts — לבן על purple נכשל ב-AA.
+  doneButtonText: { color: theme.colors.textOnAccent, fontSize: theme.fontSize.md, fontWeight: '700' },
 });

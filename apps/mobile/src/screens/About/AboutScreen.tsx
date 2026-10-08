@@ -54,9 +54,9 @@ const styles = StyleSheet.create({
   privacyTitle: {
     fontSize: theme.fontSize.md,
     fontWeight: '600',
-    color: theme.colors.purpleDark,
+    color: theme.colors.lilac,
     textAlign: 'right',
     marginBottom: theme.spacing.xs,
   },
-  privacyText: { fontSize: theme.fontSize.sm, color: theme.colors.purpleDark, textAlign: 'right', marginTop: 4 },
+  privacyText: { fontSize: theme.fontSize.sm, color: theme.colors.lilac, textAlign: 'right', marginTop: 4 },
 });

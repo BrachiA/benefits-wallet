@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../theme/theme';
 import { useSearch } from '../../api/hooks/useSearch';
 import { useGroupedRecommendations } from '../../api/hooks/useGroupedRecommendations';
 import { BenefitCard } from '../../components/domain/BenefitCard';
 import { GroupedBenefitsView } from '../../components/domain/GroupedBenefitsView';
-import { EmptyState, LoadingSpinner } from '../../components/common/EmptyState';
+import { EmptyState, ErrorState, LoadingSpinner } from '../../components/common/EmptyState';
+import { SearchBar } from '../../components/common/SearchBar';
 import type { Benefit } from '../../api/types';
 import type { BenefitGroup } from '../../api/hooks/useGroupedRecommendations';
 
@@ -23,8 +24,13 @@ type Props = {
 export function SearchScreen({ onOpenBenefit, onOpenCategory, onOpenBenefitGroup }: Props) {
   const [query, setQuery] = useState('');
   const [selectedBrand, setSelectedBrand] = useState<{ id: string; name: string } | null>(null);
-  const { data: results, isLoading } = useSearch(query);
-  const { data: groups, isLoading: isLoadingGroups } = useGroupedRecommendations({ brandId: selectedBrand?.id });
+  const { data: results, isLoading, isError, refetch } = useSearch(query);
+  const {
+    data: groups,
+    isLoading: isLoadingGroups,
+    isError: isGroupsError,
+    refetch: refetchGroups,
+  } = useGroupedRecommendations({ brandId: selectedBrand?.id });
 
   // חזרה מתצוגת-מותג לתוצאות החיפוש הרגילות
   if (selectedBrand) {
@@ -37,11 +43,13 @@ export function SearchScreen({ onOpenBenefit, onOpenCategory, onOpenBenefitGroup
 
         {isLoadingGroups && <LoadingSpinner />}
 
-        {!isLoadingGroups && groups && groups.length === 0 && (
+        {!isLoadingGroups && isGroupsError && <ErrorState onRetry={() => refetchGroups()} />}
+
+        {!isLoadingGroups && !isGroupsError && groups && groups.length === 0 && (
           <EmptyState icon="🔍" title={`אין עדיין הטבות פעילות ב${selectedBrand.name}`} hint="נסי לבדוק שוב בקרוב" />
         )}
 
-        {!isLoadingGroups && groups && groups.length > 0 && (
+        {!isLoadingGroups && !isGroupsError && groups && groups.length > 0 && (
           <FlatList
             data={[1]}
             keyExtractor={() => 'grouped'}
@@ -71,25 +79,19 @@ export function SearchScreen({ onOpenBenefit, onOpenCategory, onOpenBenefitGroup
 
   return (
     <View style={styles.container}>
-      <View style={styles.searchBar}>
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="חפשי חנות, קטגוריה, מותג או מועדון..."
-          placeholderTextColor={theme.colors.textMuted}
-          style={styles.input}
-          textAlign="right"
-          autoCorrect={false}
-        />
+      <View style={styles.searchBarWrap}>
+        <SearchBar value={query} onChangeText={setQuery} placeholder="חפשי חנות, קטגוריה, מותג או מועדון..." />
       </View>
 
       {!hasQuery && <EmptyState icon="🔎" title="חפשי הטבה" hint="לפי שם חנות, מותג, מועדון, קטגוריה או תגית" />}
 
-      {hasQuery && !isLoading && !hasResults && (
+      {hasQuery && isError && <ErrorState onRetry={() => refetch()} />}
+
+      {hasQuery && !isLoading && !isError && !hasResults && (
         <EmptyState icon="🤷‍♀️" title={`לא נמצאו תוצאות עבור "${query}"`} hint="נסי מילת חיפוש אחרת" />
       )}
 
-      {hasQuery && hasResults && results && (
+      {hasQuery && !isError && hasResults && results && (
         <FlatList
           data={[1]}
           keyExtractor={() => 'search-results'}
@@ -163,17 +165,7 @@ export function SearchScreen({ onOpenBenefit, onOpenCategory, onOpenBenefitGroup
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  searchBar: { padding: theme.spacing.lg, paddingBottom: theme.spacing.sm },
-  input: {
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.md,
-    paddingHorizontal: theme.spacing.md,
-    minHeight: theme.minTouchTarget,
-    fontSize: theme.fontSize.md,
-    color: theme.colors.textPrimary,
-  },
+  searchBarWrap: { padding: theme.spacing.lg, paddingBottom: theme.spacing.sm },
   backButton: {
     marginTop: theme.spacing.lg,
     marginHorizontal: theme.spacing.lg,
@@ -207,7 +199,7 @@ const styles = StyleSheet.create({
     minHeight: theme.minTouchTarget,
     justifyContent: 'center',
   },
-  chipText: { fontSize: theme.fontSize.sm, color: theme.colors.purpleDark, fontWeight: '500' },
+  chipText: { fontSize: theme.fontSize.sm, color: theme.colors.lilac, fontWeight: '500' },
   brandRow: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
