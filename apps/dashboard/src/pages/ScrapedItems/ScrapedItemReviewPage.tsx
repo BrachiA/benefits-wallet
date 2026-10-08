@@ -23,11 +23,18 @@ export function ScrapedItemReviewPage() {
   const [overrideTitle, setOverrideTitle] = useState('');
   const [isActing, setIsActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ברירת מחדל: מציגים את תקציר ה-AI (aiSummary) אם קיים, לא את
+  // התיאור הגולמי — "הצג מקור" מחליף זמנית, המקור לעולם לא נמחק/מוסתר.
+  const [showOriginalDescription, setShowOriginalDescription] = useState(false);
 
   useEffect(() => {
     apiClient.get<ScrapedItem>(`/scraper/items/${id}`).then((i) => {
       setItem(i);
       setOverrideTitle(i.rawData.title);
+      // ממלא מראש עם הצעת ה-AI (ביטחון גבוה בלבד — aiEnrichment.service
+      // לא ממלא aiSuggestedCategoryId מתחת לסף) — עדיין ניתן לשינוי,
+      // האישור הסופי תמיד ביד המנהלת.
+      if (i.aiSuggestedCategoryId) setOverrideCategoryId(i.aiSuggestedCategoryId);
     });
     apiClient.getPaginated<Category[]>('/categories?pageSize=200').then((r) => setCategories(r.data));
   }, [id]);
@@ -87,7 +94,20 @@ export function ScrapedItemReviewPage() {
         </div>
 
         {item.rawData.shortDescription && (
-          <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{item.rawData.shortDescription}</p>
+          <div style={{ marginBottom: 8 }}>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 0 }}>
+              {item.aiSummary && !showOriginalDescription ? item.aiSummary : item.rawData.shortDescription}
+            </p>
+            {item.aiSummary && (
+              <button
+                type="button"
+                onClick={() => setShowOriginalDescription((v) => !v)}
+                style={{ background: 'none', border: 'none', padding: 0, marginTop: 4, fontSize: 12, color: 'var(--bp-purple)', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                {showOriginalDescription ? 'הצג תקציר (AI)' : 'הצג מקור'}
+              </button>
+            )}
+          </div>
         )}
 
         <div style={{ display: 'flex', gap: 24, fontSize: 13, marginBottom: 16 }}>
@@ -127,14 +147,19 @@ export function ScrapedItemReviewPage() {
 
           {isNewBenefit && (
             <Field label="קטגוריה" hint="חובה עבור הטבה חדשה">
-              <Select value={overrideCategoryId} onChange={(e) => setOverrideCategoryId(e.target.value)}>
-                <option value="">בחרי קטגוריה</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Select value={overrideCategoryId} onChange={(e) => setOverrideCategoryId(e.target.value)}>
+                  <option value="">בחרי קטגוריה</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+                {item.aiSuggestedCategoryId && (
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>🤖 הוצע ע&quot;י AI</span>
+                )}
+              </div>
             </Field>
           )}
 

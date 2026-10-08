@@ -26,6 +26,7 @@ import { ScraperSourcesListPage } from './pages/ScraperSources/ScraperSourcesLis
 import { ScraperSourceFormPage } from './pages/ScraperSources/ScraperSourceFormPage';
 import { ScrapedItemsListPage } from './pages/ScrapedItems/ScrapedItemsListPage';
 import { ScrapedItemReviewPage } from './pages/ScrapedItems/ScrapedItemReviewPage';
+import { DuplicateCleanupLogPage } from './pages/DuplicateCleanup/DuplicateCleanupLogPage';
 
 type AuthState = 'loading' | 'authenticated' | 'anonymous';
 
@@ -98,6 +99,8 @@ export function App() {
 
           <Route path="/scraped-items" element={<ScrapedItemsListPage />} />
           <Route path="/scraped-items/:id" element={<ScrapedItemReviewPage />} />
+
+          <Route path="/duplicate-cleanup" element={<DuplicateCleanupLogPage />} />
         </Routes>
       </Layout>
     </BrowserRouter>

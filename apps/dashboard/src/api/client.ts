@@ -133,6 +133,22 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return body.data;
 }
 
+// העלאת קובץ (multipart/form-data) — לא דרך request(): זה מכריח
+// Content-Type:'application/json' תמיד, שהיה שובר את ה-boundary
+// שהדפדפן צריך לקבוע בעצמו עבור FormData. בלי header מוגדר בכלל
+// כאן, fetch משלים אותו לבד נכון.
+async function requestFile<T>(path: string, file: File, fieldName = 'file'): Promise<T> {
+  const formData = new FormData();
+  formData.append(fieldName, file);
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...FETCH_DEFAULTS, method: 'POST', body: formData });
+  const body = (await response.json()) as ApiSuccessResponse<T> | ApiErrorResponse;
+  if (!body.success) {
+    if (isSessionExpired(body)) redirectToLogin();
+    throw new ApiError(body.error.code, body.error.message, body.error.details);
+  }
+  return body.data;
+}
+
 // גרסה שמחזירה גם meta (pagination) — לרשימות
 async function requestPaginated<T>(
   path: string,
@@ -158,4 +174,5 @@ export const apiClient = {
   post: <T>(path: string, body: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: (path: string) => request<void>(path, { method: 'DELETE' }),
+  uploadFile: <T>(path: string, file: File, fieldName?: string) => requestFile<T>(path, file, fieldName),
 };

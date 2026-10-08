@@ -30,6 +30,7 @@ const navGroups = [
     items: [
       { to: '/scraper-sources', label: 'מקורות סריקה' },
       { to: '/scraped-items', label: 'תור בדיקה' },
+      { to: '/duplicate-cleanup', label: 'התרעות AI' },
     ],
   },
 ];

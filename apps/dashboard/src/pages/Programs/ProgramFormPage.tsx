@@ -2,9 +2,18 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiClient, formatSaveError } from '../../api/client';
 import { PageHeader, Field, Input, Select, Button, toOptionalNumber } from '../../components/forms/FormPrimitives';
+import { LogoModeField } from '../../components/forms/LogoModeField';
 import { programTypeLabels, type Issuer, type Program } from '../../types/program';
 
-const emptyForm = { slug: '', name: '', issuerId: '', parentProgramId: '', type: 'CREDIT_CARD', annualFee: undefined as number | undefined };
+const emptyForm = {
+  slug: '',
+  name: '',
+  issuerId: '',
+  parentProgramId: '',
+  type: 'CREDIT_CARD',
+  annualFee: undefined as number | undefined,
+  logoMode: 'AUTO' as 'AUTO' | 'MANUAL',
+};
 
 const fieldLabels: Record<string, string> = {
   slug: 'מזהה URL (slug)',
@@ -23,6 +32,7 @@ export function ProgramFormPage() {
   const [issuers, setIssuers] = useState<Issuer[]>([]);
   const [allPrograms, setAllPrograms] = useState<Program[]>([]);
   const [form, setForm] = useState(emptyForm);
+  const [defaultLogoUrl, setDefaultLogoUrl] = useState<string | null | undefined>(undefined);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +40,7 @@ export function ProgramFormPage() {
     apiClient.getPaginated<Issuer[]>('/issuers?pageSize=100').then((r) => setIssuers(r.data));
     apiClient.getPaginated<Program[]>('/programs?pageSize=200').then((r) => setAllPrograms(r.data));
     if (isEditMode) {
-      apiClient.get<Program>(`/programs/${id}`).then((p) =>
+      apiClient.get<Program>(`/programs/${id}`).then((p) => {
         setForm({
           slug: p.slug,
           name: p.name,
@@ -38,8 +48,10 @@ export function ProgramFormPage() {
           parentProgramId: p.parentProgramId ?? '',
           type: p.type,
           annualFee: toOptionalNumber(p.annualFee),
-        })
-      );
+          logoMode: p.logoMode,
+        });
+        setDefaultLogoUrl(p.defaultLogoUrl);
+      });
     }
   }, [id, isEditMode]);
 
@@ -112,6 +124,16 @@ export function ProgramFormPage() {
             onChange={(e) => setForm({ ...form, annualFee: e.target.value ? Number(e.target.value) : undefined })}
           />
         </Field>
+
+        <LogoModeField
+          entityKind="programs"
+          entityId={id ?? 'new'}
+          isEditMode={isEditMode}
+          logoMode={form.logoMode}
+          defaultLogoUrl={defaultLogoUrl}
+          onLogoModeChange={(logoMode) => setForm({ ...form, logoMode })}
+          onUploaded={setDefaultLogoUrl}
+        />
 
         {error && (
           <div style={{ marginTop: 8, padding: 12, background: 'var(--status-danger-bg)', color: 'var(--status-danger-text)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}>

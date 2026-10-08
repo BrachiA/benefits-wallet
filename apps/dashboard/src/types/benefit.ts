@@ -21,6 +21,7 @@ export type Benefit = {
   benefitType: string;
   discountValue?: number;
   discountUnit?: 'PERCENT' | 'ILS' | 'POINTS';
+  imageUrl?: string;
   isActive: boolean;
   isPopular: boolean;
   isFeatured: boolean;

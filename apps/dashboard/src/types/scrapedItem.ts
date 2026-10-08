@@ -16,4 +16,9 @@ export type ScrapedItem = {
   confidenceReasons: string[];
   status: 'AUTO_PUBLISHED' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED';
   scrapedAt: string;
+  // modules/aiEnrichment (ראו aiEnrichment.service.ts) — aiSummary
+  // תמיד ליד rawData.shortDescription, לעולם לא במקומו.
+  aiSummary?: string | null;
+  aiSuggestedCategoryId?: string | null;
+  aiSuggestedCategory?: { id: string; name: string } | null;
 };

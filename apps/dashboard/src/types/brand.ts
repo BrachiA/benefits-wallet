@@ -11,4 +11,7 @@ export type Brand = {
   hasPhysicalStores: boolean;
   searchKeywords: string[];
   isActive: boolean;
+  // ראו הערה מקבילה ב-types/program.ts.
+  defaultLogoUrl?: string | null;
+  logoMode: 'AUTO' | 'MANUAL';
 };

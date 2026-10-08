@@ -13,6 +13,10 @@ export type Program = {
   annualFee?: number;
   isActive: boolean;
   isPopular: boolean;
+  // לוגו ברירת מחדל (Cloudflare R2) — נמצא אוטומטית ע"י AI (Grounding
+  // with Google Search) או הועלה ידנית. ראו components/LogoModeField.
+  defaultLogoUrl?: string | null;
+  logoMode: 'AUTO' | 'MANUAL';
 };
 
 export const programTypeLabels: Record<string, string> = {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiClient, formatSaveError } from '../../api/client';
 import { PageHeader, Field, Input, Select, Button } from '../../components/forms/FormPrimitives';
+import { LogoModeField } from '../../components/forms/LogoModeField';
 import type { Brand } from '../../types/brand';
 import type { Category } from '../../types/category';
 
@@ -21,6 +22,7 @@ const emptyForm = {
   hasOnlineStore: false,
   hasPhysicalStores: false,
   searchKeywordsText: '', // מוחזק כטקסט מופרד-פסיקים בטופס, מפוצל למערך רק בשמירה
+  logoMode: 'AUTO' as 'AUTO' | 'MANUAL',
 };
 
 export function BrandFormPage() {
@@ -31,6 +33,7 @@ export function BrandFormPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [allBrands, setAllBrands] = useState<Brand[]>([]);
   const [form, setForm] = useState(emptyForm);
+  const [defaultLogoUrl, setDefaultLogoUrl] = useState<string | null | undefined>(undefined);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +41,7 @@ export function BrandFormPage() {
     apiClient.getPaginated<Category[]>('/categories?pageSize=200').then((r) => setCategories(r.data));
     apiClient.getPaginated<Brand[]>('/brands?pageSize=200').then((r) => setAllBrands(r.data));
     if (isEditMode) {
-      apiClient.get<Brand>(`/brands/${id}`).then((b) =>
+      apiClient.get<Brand>(`/brands/${id}`).then((b) => {
         setForm({
           slug: b.slug,
           name: b.name,
@@ -47,8 +50,10 @@ export function BrandFormPage() {
           hasOnlineStore: b.hasOnlineStore,
           hasPhysicalStores: b.hasPhysicalStores,
           searchKeywordsText: b.searchKeywords.join(', '),
-        })
-      );
+          logoMode: b.logoMode,
+        });
+        setDefaultLogoUrl(b.defaultLogoUrl);
+      });
     }
   }, [id, isEditMode]);
 
@@ -127,6 +132,16 @@ export function BrandFormPage() {
             יש סניפים פיזיים
           </label>
         </div>
+
+        <LogoModeField
+          entityKind="brands"
+          entityId={id ?? 'new'}
+          isEditMode={isEditMode}
+          logoMode={form.logoMode}
+          defaultLogoUrl={defaultLogoUrl}
+          onLogoModeChange={(logoMode) => setForm({ ...form, logoMode })}
+          onUploaded={setDefaultLogoUrl}
+        />
 
         {error && (
           <div style={{ marginTop: 8, padding: 12, background: 'var(--status-danger-bg)', color: 'var(--status-danger-text)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}>

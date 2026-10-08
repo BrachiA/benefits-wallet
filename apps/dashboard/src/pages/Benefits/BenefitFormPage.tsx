@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiClient, formatSaveError } from '../../api/client';
-import { PageHeader, Field, Input, Select, Button, toOptionalNumber } from '../../components/forms/FormPrimitives';
+import { PageHeader, Field, Input, Select, Button, toOptionalNumber, optionalUrl } from '../../components/forms/FormPrimitives';
 import { ScopeEditor } from '../../components/forms/ScopeEditor';
 import { benefitTypeLabels, type Benefit, type BenefitScope, type Category } from '../../types/benefit';
 
@@ -12,6 +12,7 @@ const fieldLabels: Record<string, string> = {
   categoryId: 'קטגוריה',
   benefitType: 'סוג הטבה',
   discountValue: 'ערך ההנחה',
+  imageUrl: 'תמונה',
   scopes: 'התאמות',
 };
 
@@ -22,6 +23,7 @@ const emptyForm = {
   categoryId: '',
   benefitType: 'DISCOUNT_PERCENT',
   discountValue: undefined as number | undefined,
+  imageUrl: '',
   isPopular: false,
   isFeatured: false,
 };
@@ -48,6 +50,7 @@ export function BenefitFormPage() {
           categoryId: b.categoryId,
           benefitType: b.benefitType,
           discountValue: toOptionalNumber(b.discountValue),
+          imageUrl: b.imageUrl ?? '',
           isPopular: b.isPopular,
           isFeatured: b.isFeatured,
         });
@@ -66,13 +69,14 @@ export function BenefitFormPage() {
     }
     setIsSaving(true);
     try {
+      const payload = { ...form, imageUrl: optionalUrl(form.imageUrl), scopes };
       if (isEditMode) {
         // scopes נכלל גם בעדכון (לא רק ביצירה): זו הדרך היחידה
         // לתקן "למי ההטבה תקפה" אחרי שההטבה כבר קיימת — קודם לא
         // הייתה אפשרות כזו בכלל, לא בטופס ולא ב-API.
-        await apiClient.patch(`/benefits/${id}`, { ...form, scopes });
+        await apiClient.patch(`/benefits/${id}`, payload);
       } else {
-        await apiClient.post('/benefits', { ...form, scopes });
+        await apiClient.post('/benefits', payload);
       }
       navigate('/benefits');
     } catch (err) {
@@ -129,6 +133,14 @@ export function BenefitFormPage() {
             type="number"
             value={form.discountValue ?? ''}
             onChange={(e) => setForm({ ...form, discountValue: e.target.value ? Number(e.target.value) : undefined })}
+          />
+        </Field>
+
+        <Field label="תמונה" hint="קישור לתמונה שתוצג בכרטיס ההטבה באפליקציה. בלי תמונה, הכרטיס יציג placeholder גנרי">
+          <Input
+            value={form.imageUrl}
+            onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+            placeholder="https://…"
           />
         </Field>
 

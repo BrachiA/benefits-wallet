@@ -393,8 +393,14 @@ export function ScraperSourceFormPage() {
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
                 נבדק לאחרונה ע"י {source.tosReviewedBy}
                 {source.tosReviewedAt && ` · ${new Date(source.tosReviewedAt).toLocaleDateString('he-IL')}`}
-                {source.tosNotes && ` · "${source.tosNotes}"`}
               </div>
+            )}
+
+            {/* מוצג תמיד כשקיים, גם לפני החלטה ראשונה — אלה עשויות
+                להיות הערות שהוכנו מראש (למשל ממחקר טכני/משפטי קודם)
+                שהמנהלת צריכה לקרוא *לפני* שהיא מחליטה, לא רק אחריה. */}
+            {source.tosNotes && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>הערות קיימות: "{source.tosNotes}"</div>
             )}
 
             <Field label="שמך" hint="נדרש כתיעוד — מי אישר/דחה ומתי">
